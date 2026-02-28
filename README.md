@@ -1,1 +1,2 @@
 # stockmind-mini
+# stockmind-mini
