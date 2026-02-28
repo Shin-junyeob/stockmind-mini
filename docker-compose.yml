@@ -1,0 +1,76 @@
+services:
+
+  # ── PostgreSQL ───────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: stockmind_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stockmind
+      POSTGRES_PASSWORD: stockmind
+      POSTGRES_DB: stockmind
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockmind"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Selenium (Remote Chrome) ─────────────────────────────────
+  selenium:
+    image: selenium/standalone-chrome:latest
+    container_name: stockmind_selenium
+    restart: unless-stopped
+    shm_size: "2gb"
+    ports:
+      - "4444:4444"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4444/wd/hub/status | grep -q '\"ready\": true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Pipeline (수집 + 분석 + 저장) ────────────────────────────
+  pipeline:
+    build: .
+    container_name: stockmind_pipeline
+    command: python src/main.py
+    env_file: .env
+    environment:
+      USE_REMOTE_WEBDRIVER: "true"
+      SELENIUM_REMOTE_URL: "http://selenium:4444"
+    depends_on:
+      db:
+        condition: service_healthy
+      selenium:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+
+  # ── API ───────────────────────────────────────────────────────
+  api:
+    build: .
+    container_name: stockmind_api
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file: .env
+    environment:
+      USE_REMOTE_WEBDRIVER: "true"
+      SELENIUM_REMOTE_URL: "http://selenium:4444"
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
