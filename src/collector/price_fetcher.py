@@ -85,10 +85,13 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
 
 def _period_to_days(period: str) -> int:
     """'5d' → 5, '1mo' → 30, '3mo' → 90"""
-    if period.endswith("d"):
-        return int(period[:-1])
-    elif period.endswith("mo"):
-        return int(period[:-2]) * 30
+    try:
+        if period.endswith("mo"):
+            return int(period[:-2]) * 30
+        elif period.endswith("d"):
+            return int(period[:-1])
+    except ValueError:
+        pass
     return 7
 
 
