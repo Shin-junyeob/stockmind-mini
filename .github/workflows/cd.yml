@@ -1,0 +1,84 @@
+name: CD
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    # 매일 오전 9시 (KST) = UTC 00:00 자동 실행
+    - cron: '0 0 * * *'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── AWS 인증 ───────────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # ── ECR 로그인 ─────────────────────────────────────────
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Docker 이미지 빌드 & ECR 푸시 ─────────────────────
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # ── EC2 배포 ───────────────────────────────────────────
+      - name: Deploy to EC2
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: ECR_REGISTRY, ECR_REPOSITORY
+          script: |
+            # AWS ECR 로그인
+            aws ecr get-login-password --region ap-northeast-2 | \
+              docker login --username AWS --password-stdin $ECR_REGISTRY
+
+            # 최신 이미지 pull
+            docker pull $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+            # 기존 컨테이너 중지 및 제거
+            docker compose -f ~/stockmind-mini/docker-compose.yml down || true
+
+            # 최신 코드 pull
+            cd ~/stockmind-mini
+            git pull origin main
+
+            # 컨테이너 재시작
+            docker compose up -d db api
+
+            echo "✅ 배포 완료"
+
+      # ── 파이프라인 실행 (수집 + 분석 + 저장) ───────────────
+      - name: Run pipeline
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/stockmind-mini
+            docker compose run --rm pipeline
+            echo "✅ 파이프라인 실행 완료"
