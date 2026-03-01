@@ -33,6 +33,9 @@ def _get_driver(options: Options) -> webdriver.Remote:
 
 def _build_chrome_options(user_agent: Optional[str] = None) -> Options:
     opts = Options()
+    chrome_bin = os.getenv("CHROME_BIN")
+    if chrome_bin:
+        opts.binary_location = chrome_bin
     if SELENIUM.get("headless", True):
         opts.add_argument("--headless=new")
     if SELENIUM.get("disable_gpu", True):
