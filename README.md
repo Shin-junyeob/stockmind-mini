@@ -17,17 +17,21 @@
 ```
 GitHub Actions (매일 KST 09:00 cron)
     ↓
-Docker Pipeline
-├── 주가 수집       (Yahoo Finance API)
-├── 뉴스 링크 수집  (Selenium + Yahoo Finance)
+Actions Runner (RAM 7GB, 무료)
+├── 주가 수집       (Yahoo Finance API 직접 호출)
+├── 뉴스 링크 수집  (Selenium + Chromium)
 ├── 기사 본문 수집  (HTTP + Selenium fallback)
 ├── 감정 분석       (VADER)
-└── DB 저장         (PostgreSQL)
-    ↓
-FastAPI (EC2 상주)
-    ↓
-API 응답
+└── EC2 DB 직접 저장 (PostgreSQL)
+
+EC2 (24시간 상주)
+├── PostgreSQL  (데이터 저장)
+└── FastAPI     (API 서버)
 ```
+
+### 아키텍처 결정 이유
+
+초기 설계에서는 EC2 내부에서 Selenium 크롤링을 실행했으나, t2.micro (RAM 1GB) 환경에서 Chrome이 메모리 부족으로 타임아웃이 발생했다. 이를 해결하기 위해 크롤링과 감정분석을 **GitHub Actions runner (RAM 7GB, 무료)** 에서 실행하고, 결과만 EC2 DB에 저장하는 구조로 변경했다. EC2는 DB와 API 서버만 담당하여 안정적으로 운영된다.
 
 ---
 
@@ -54,7 +58,7 @@ stockmind-mini/
 ├── src/
 │   ├── collector/
 │   │   ├── price_fetcher.py    # 주가 수집 (Yahoo Finance API 직접 호출)
-│   │   ├── yahoo_scraper.py    # 뉴스 링크 수집 (Selenium)
+│   │   ├── yahoo_scraper.py    # 뉴스 링크 수집 (Selenium + CHROME_BIN 지원)
 │   │   ├── article_fetcher.py  # 기사 본문 수집
 │   │   └── http_utils.py       # HTTP 유틸리티
 │   ├── analyzer/
@@ -73,7 +77,7 @@ stockmind-mini/
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml              # PR 시 자동 테스트
-│       └── cd.yml              # main 머지 시 자동 배포
+│       └── cd.yml              # main 머지 시 자동 배포 + 매일 cron 수집
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt
@@ -133,40 +137,46 @@ SELENIUM_REMOTE_URL=http://selenium:4444
 [
   {
     "ticker": "TSLA",
-    "date": "2026-02-26",
+    "date": "2026-02-27",
     "direction": "down",
-    "price_change_pct": -1.4092,
-    "article_count": 19,
-    "positive_count": 13,
-    "negative_count": 4,
-    "neutral_count": 2
+    "price_change_pct": -0.1067,
+    "article_count": 13,
+    "positive_count": 10,
+    "negative_count": 3,
+    "neutral_count": 0
   }
 ]
 ```
 
-Swagger UI: `http://localhost:8000/docs`
+Swagger UI: `http://[EC2_HOST]:8000/docs`
 
 ---
 
 ## CI/CD 파이프라인
 
 ### CI (ci.yml)
-- **트리거**: PR 생성 시
+- **트리거**: PR 생성 시 (→ main)
 - **동작**: pytest 자동 실행 (18개 테스트)
 - **효과**: 테스트 실패 시 머지 불가
 
 ### CD (cd.yml)
-- **트리거 1**: main 브랜치 머지 시 → 즉시 배포
-- **트리거 2**: 매일 KST 09:00 (cron) → 파이프라인 자동 실행
-- **동작**:
-  1. Docker 이미지 빌드
-  2. AWS ECR에 푸시
-  3. EC2에 SSH 접속 → 최신 이미지 배포
-  4. 파이프라인 실행 (수집 + 분석 + 저장)
+두 개의 독립적인 job으로 구성.
 
+**deploy job** (main 머지 시에만 실행)
+1. Docker 이미지 빌드
+2. AWS ECR에 푸시
+3. EC2에 SSH 접속 → 최신 이미지 배포
+
+**pipeline job** (main 머지 시 + 매일 KST 09:00 cron)
+1. Actions runner에서 Chromium으로 뉴스 크롤링
+2. VADER 감정분석
+3. EC2 PostgreSQL DB에 직접 저장
+
+### Git Flow
 ```
-개발 흐름:
-로컬 작업 → PR → CI 테스트 통과 → 머지 → CD 자동 배포
+feature/* → dev → main
+    ↓          ↓      ↓
+  개발       CI    CI + CD
 ```
 
 ---
@@ -175,18 +185,20 @@ Swagger UI: `http://localhost:8000/docs`
 
 | 문제 | 원인 | 해결 |
 |------|------|------|
-| yfinance Docker 내부 오류 | yfinance 내부 파싱 이슈 | requests로 Yahoo Finance API 직접 호출 |
+| EC2 Selenium 타임아웃 | t2.micro RAM 부족 (1GB) | Actions runner로 크롤링 이전 |
+| yfinance Docker 오류 | yfinance 내부 파싱 이슈 | requests로 Yahoo Finance API 직접 호출 |
 | EC2 패키지 설치 타임아웃 | 아웃바운드 보안그룹 미설정 | 아웃바운드 All traffic 허용 |
+| Chrome 바이너리 없음 | Actions runner Chrome 경로 상이 | CHROME_BIN 환경변수로 경로 지정 |
 | ECR push 실패 | GitHub Secret 값 오류 | ECR_REPOSITORY Secret 재등록 |
-| SSH 접속 타임아웃 | 인바운드 SSH 규칙 My IP 제한 | Anywhere(0.0.0.0/0)로 변경 |
+| SSH 접속 타임아웃 | 인바운드 SSH 규칙 제한 | Anywhere(0.0.0.0/0)로 변경 |
 | ModuleNotFoundError | import 경로 오류 | 절대경로로 수정 (db.models 등) |
 
 ---
 
 ## 향후 개발 계획
 
-- [ ] GitHub Actions runner에서 크롤링 실행 (EC2 메모리 부담 제거)
 - [ ] 감정분석 고도화 (VADER → FinBERT)
 - [ ] 주가 예측 모델 추가 (LSTM)
 - [ ] 알림 시스템 (감정 급변 시 Slack 발송)
 - [ ] 대시보드 UI 구축
+- [ ] 백테스팅 (감정분석 기반 매매 전략 검증)
