@@ -3,6 +3,10 @@ name: CI
 on:
   pull_request:
     branches: [ main, dev ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
 
 jobs:
   test:
