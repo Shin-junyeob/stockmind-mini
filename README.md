@@ -2,27 +2,32 @@
 
 삼성전자(005930.KS)와 테슬라(TSLA)의 주가 데이터 및 뉴스 감정분석을 매일 자동 수집하고 API로 제공하는 경량 데이터 파이프라인.
 
+> 단순한 데이터 수집을 넘어, 주가 예측 모델과 AI Agent로 발전시키는 것을 목표로 진행 중인 프로젝트입니다.
+
 ---
 
 ## 프로젝트 목적
 
-- 삼성전자 주가 흐름 파악 및 투자 인사이트 확보
-- 일론 머스크 관련 뉴스 감정분석을 통한 테슬라 주가 흐름 사전 파악
+- 삼성전자 · 테슬라 주가 흐름 파악 및 투자 인사이트 확보
+- 뉴스 감정분석을 통한 주가 흐름 사전 파악
+- 기술적 지표 · 시장 지표 · 감정분석을 결합한 앙상블 예측 모델 구축 (진행 중)
 - CI/CD 자동화 파이프라인 구축 실습
 
 ---
 
-## 아키텍처
+## 현재 아키텍처
 
 ```
 GitHub Actions (매일 KST 09:00 cron)
     ↓
 Actions Runner (RAM 7GB, 무료)
-├── 주가 수집       (Yahoo Finance API 직접 호출)
-├── 뉴스 링크 수집  (Selenium + Chromium)
-├── 기사 본문 수집  (HTTP + Selenium fallback)
-├── 감정 분석       (VADER)
-└── EC2 DB 직접 저장 (PostgreSQL)
+├── 주가 수집         (Yahoo Finance API 직접 호출)
+├── 기술적 지표 계산  (MA5, MA20, MA60, RSI)
+├── 시장 지표 수집    (KOSPI, KOSDAQ, 나스닥, VIX)
+├── 뉴스 링크 수집    (Selenium + Chromium)
+├── 기사 본문 수집    (HTTP + Selenium fallback)
+├── 감정 분석         (GPT-4o-mini)
+└── EC2 DB 직접 저장  (PostgreSQL)
 
 EC2 (24시간 상주)
 ├── PostgreSQL  (데이터 저장)
@@ -44,7 +49,7 @@ EC2 (24시간 상주)
 | ORM | SQLAlchemy |
 | Database | PostgreSQL 16 |
 | Crawling | Selenium, Requests |
-| NLP | VADER Sentiment |
+| NLP | GPT-4o-mini (OpenAI API) |
 | Container | Docker, Docker Compose |
 | CI/CD | GitHub Actions |
 | Cloud | AWS EC2, ECR |
@@ -57,12 +62,12 @@ EC2 (24시간 상주)
 stockmind-mini/
 ├── src/
 │   ├── collector/
-│   │   ├── price_fetcher.py    # 주가 수집 (Yahoo Finance API 직접 호출)
+│   │   ├── price_fetcher.py    # 주가 + 기술적 지표 + 시장 지표 수집
 │   │   ├── yahoo_scraper.py    # 뉴스 링크 수집 (Selenium + CHROME_BIN 지원)
 │   │   ├── article_fetcher.py  # 기사 본문 수집
 │   │   └── http_utils.py       # HTTP 유틸리티
 │   ├── analyzer/
-│   │   └── sentiment.py        # VADER 감정 분석
+│   │   └── sentiment.py        # GPT-4o-mini 감정 분석
 │   ├── db/
 │   │   ├── models.py           # DB 테이블 정의
 │   │   └── writer.py           # DB 저장 (upsert, 중복방지)
@@ -72,8 +77,8 @@ stockmind-mini/
 │   └── settings.py             # 환경변수 설정
 ├── tests/
 │   ├── test_collector.py       # 수집 모듈 테스트
-│   ├── test_analyzer.py        # 감정분석 테스트
-│   └── test_db.py              # DB 테스트
+│   ├── test_analyzer.py        # 감정분석 테스트 (mock)
+│   └── test_db.py              # DB 테스트 (mock)
 ├── .github/
 │   └── workflows/
 │       ├── ci.yml              # PR 시 자동 테스트
@@ -102,23 +107,33 @@ cd stockmind-mini
 cp .env.example .env
 
 # 컨테이너 실행
-docker compose up -d db selenium api
+docker compose up -d db api
 
 # 파이프라인 수동 실행
-docker compose run --rm pipeline
+PYTHONPATH=src python src/main.py
 ```
 
 ### 환경변수 (.env)
 
 ```
 DATABASE_URL=postgresql://stockmind:stockmind@db:5432/stockmind
+OPENAI_API_KEY=sk-...
 YF_MAX_SCROLL=10
 YF_MAX_ARTICLES=30
 PRICE_PERIOD=5d
 PRICE_INTERVAL=1d
-USE_REMOTE_WEBDRIVER=false
-SELENIUM_REMOTE_URL=http://selenium:4444
 ```
+
+---
+
+## DB 테이블 구조
+
+| 테이블 | 설명 |
+|--------|------|
+| stock_prices | 일별 주가 + MA5/MA20/MA60/RSI |
+| news_articles | 뉴스 기사 + GPT 감정분석 결과 |
+| market_indicators | KOSPI, KOSDAQ, 나스닥, VIX |
+| fundamentals | 시가총액, PER, PBR (수집 보류) |
 
 ---
 
@@ -131,23 +146,6 @@ SELENIUM_REMOTE_URL=http://selenium:4444
 | GET | `/stocks/{ticker}/news` | 뉴스 감정분석 이력 조회 |
 | GET | `/stocks/{ticker}/summary` | 날짜별 주가 + 감정 요약 |
 
-### 응답 예시 (/stocks/TSLA/summary)
-
-```json
-[
-  {
-    "ticker": "TSLA",
-    "date": "2026-02-27",
-    "direction": "down",
-    "price_change_pct": -0.1067,
-    "article_count": 13,
-    "positive_count": 10,
-    "negative_count": 3,
-    "neutral_count": 0
-  }
-]
-```
-
 Swagger UI: `http://[EC2_HOST]:8000/docs`
 
 ---
@@ -155,21 +153,20 @@ Swagger UI: `http://[EC2_HOST]:8000/docs`
 ## CI/CD 파이프라인
 
 ### CI (ci.yml)
-- **트리거**: PR 생성 시 (→ main)
-- **동작**: pytest 자동 실행 (18개 테스트)
+- **트리거**: PR 생성 시 (dev, main 대상)
+- **동작**: pytest 자동 실행
 - **효과**: 테스트 실패 시 머지 불가
 
 ### CD (cd.yml)
 두 개의 독립적인 job으로 구성.
 
 **deploy job** (main 머지 시에만 실행)
-1. Docker 이미지 빌드
-2. AWS ECR에 푸시
-3. EC2에 SSH 접속 → 최신 이미지 배포
+1. Docker 이미지 빌드 → AWS ECR 푸시
+2. EC2에 SSH 접속 → 최신 이미지 배포
 
 **pipeline job** (main 머지 시 + 매일 KST 09:00 cron)
-1. Actions runner에서 Chromium으로 뉴스 크롤링
-2. VADER 감정분석
+1. Actions runner에서 주가 · 뉴스 수집
+2. GPT-4o-mini 감정분석
 3. EC2 PostgreSQL DB에 직접 저장
 
 ### Git Flow
@@ -189,16 +186,17 @@ feature/* → dev → main
 | yfinance Docker 오류 | yfinance 내부 파싱 이슈 | requests로 Yahoo Finance API 직접 호출 |
 | EC2 패키지 설치 타임아웃 | 아웃바운드 보안그룹 미설정 | 아웃바운드 All traffic 허용 |
 | Chrome 바이너리 없음 | Actions runner Chrome 경로 상이 | CHROME_BIN 환경변수로 경로 지정 |
-| ECR push 실패 | GitHub Secret 값 오류 | ECR_REPOSITORY Secret 재등록 |
-| SSH 접속 타임아웃 | 인바운드 SSH 규칙 제한 | Anywhere(0.0.0.0/0)로 변경 |
-| ModuleNotFoundError | import 경로 오류 | 절대경로로 수정 (db.models 등) |
+| CI DB 컬럼 없음 | init_db가 ALTER TABLE 미실행 | init_db에 마이그레이션 로직 추가 |
+| 펀더멘털 수집 401 에러 | Yahoo Finance API 정책 변경 | 펀더멘털 수집 보류, 추후 yfinance로 대체 예정 |
+| Docker healthcheck 실패 | 컨테이너에 curl 미설치 | Dockerfile에 curl 추가 |
 
 ---
 
 ## 향후 개발 계획
 
-- [ ] 감정분석 고도화 (VADER → FinBERT)
-- [ ] 주가 예측 모델 추가 (LSTM)
-- [ ] 알림 시스템 (감정 급변 시 Slack 발송)
-- [ ] 대시보드 UI 구축
-- [ ] 백테스팅 (감정분석 기반 매매 전략 검증)
+- [ ] 과거 데이터 수집 (backfill.py)
+- [ ] 주가 기반 예측 모델 (LSTM) - Model A
+- [ ] 감정분석 기반 예측 모델 - Model B
+- [ ] 앙상블 메타모델 (Model A + B, 가중치 튜닝)
+- [ ] 백테스팅 (예측 정확도 검증)
+- [ ] AI Agent (LangGraph, 자연어 투자 인사이트)
