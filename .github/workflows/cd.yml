@@ -87,6 +87,7 @@ jobs:
       - name: Run pipeline
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           USE_REMOTE_WEBDRIVER: "false"
           CHROME_BIN: /usr/bin/chromium-browser
           PYTHONPATH: src
