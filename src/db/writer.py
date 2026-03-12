@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from datetime import date
 from typing import Generator
 
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -12,14 +12,30 @@ from settings import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
-# 엔진 / 세션 팩토리 (모듈 로드 시 1회 생성)
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionFactory = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def init_db() -> None:
-    """테이블이 없으면 생성. 서버 최초 실행 시 호출."""
+    """
+    테이블이 없으면 생성.
+    기존 테이블에 누락된 컬럼도 추가 (멱등성 보장).
+    """
     Base.metadata.create_all(engine)
+
+    migrations = [
+        "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS ma5  FLOAT",
+        "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS ma20 FLOAT",
+        "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS ma60 FLOAT",
+        "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS rsi  FLOAT",
+        "ALTER TABLE news_articles ADD COLUMN IF NOT EXISTS sentiment_reason TEXT",
+    ]
+
+    with engine.connect() as conn:
+        for sql in migrations:
+            conn.execute(text(sql))
+        conn.commit()
+
     logger.info("[writer] DB 테이블 초기화 완료")
 
 
@@ -97,10 +113,6 @@ def upsert_stock_prices(price_data: list[dict]) -> int:
 # ── NewsArticle ───────────────────────────────────────────────
 
 def get_existing_urls(ticker: str) -> set[str]:
-    """
-    DB에 이미 저장된 URL 집합 반환.
-    yahoo_scraper의 stop_urls로 전달해 중복 수집 방지.
-    """
     with get_session() as session:
         rows = session.execute(
             select(NewsArticle.url).where(NewsArticle.ticker == ticker)
