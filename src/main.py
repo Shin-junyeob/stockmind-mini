@@ -4,7 +4,6 @@ import sys
 from settings import TICKERS, YF_MAX_SCROLL, YF_MAX_ARTICLES
 from collector.price_fetcher import (
     fetch_price,
-    fetch_fundamental,
     fetch_market_indicators,
 )
 from collector.yahoo_scraper import collect_yahoo_links
@@ -14,7 +13,6 @@ from db.writer import (
     init_db,
     upsert_stock_prices,
     upsert_market_indicators,
-    upsert_fundamentals,
     insert_articles,
     get_existing_urls,
 )
@@ -61,14 +59,6 @@ def run_pipeline(tickers: list[str] = TICKERS) -> None:
             upsert_stock_prices(price_data)
         else:
             logger.warning(f"[{ticker}] 주가 데이터 없음, 스킵")
-
-        # ── 2. 펀더멘털 수집 ──────────────────────────────────
-        logger.info(f"[{ticker}] 펀더멘털 수집 중... (시가총액, PER, PBR)")
-        fundamental = fetch_fundamental(ticker)
-        if fundamental:
-            upsert_fundamentals([fundamental])
-        else:
-            logger.warning(f"[{ticker}] 펀더멘털 데이터 없음, 스킵")
 
         # ── 3. 뉴스 링크 수집 ────────────────────────────────
         logger.info(f"[{ticker}] 뉴스 링크 수집 중...")
