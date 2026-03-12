@@ -165,6 +165,7 @@ def _calc_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+
 def _period_to_days(period: str) -> int:
     """'5d' → 5, '1mo' → 30, '3mo' → 90, '1y' → 365"""
     try:

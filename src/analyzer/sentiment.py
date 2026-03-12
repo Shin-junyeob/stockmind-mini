@@ -1,53 +1,84 @@
+import os
 import logging
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+import json
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-# 싱글톤 analyzer (매 호출마다 재생성 방지)
-_analyzer = None
+# 싱글톤 클라이언트
+_client = None
 
 
-def _get_analyzer() -> SentimentIntensityAnalyzer:
-    global _analyzer
-    if _analyzer is None:
-        _analyzer = SentimentIntensityAnalyzer()
-    return _analyzer
+def _get_client() -> OpenAI:
+    global _client
+    if _client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY 환경변수가 설정되지 않았습니다.")
+        _client = OpenAI(api_key=api_key)
+    return _client
 
 
 def analyze_sentiment(text: str) -> dict:
     """
-    텍스트를 받아 VADER 감정분석 결과를 반환.
+    GPT-4o-mini로 금융 뉴스 감정분석.
+    지정학적 리스크, 시사 이벤트 등 금융에 간접적으로 영향을 미치는
+    맥락까지 고려한 분석 수행.
 
     반환 예시:
     {
-        "label": "positive",   # positive / negative / neutral
-        "score": 0.82,         # compound score (-1.0 ~ 1.0)
+        "label":  "positive",
+        "score":  0.8,        # -1.0 ~ 1.0
+        "reason": "..."       # 분석 이유
     }
-
-    compound score 기준:
-        >= 0.05  → positive
-        <= -0.05 → negative
-        그 외     → neutral
     """
     if not isinstance(text, str) or not text.strip():
-        return {"label": "neutral", "score": 0.0}
+        return {"label": "neutral", "score": 0.0, "reason": ""}
 
     try:
-        scores = _get_analyzer().polarity_scores(text[:1000])  # 너무 긴 텍스트 방지
-        compound = round(scores["compound"], 4)
+        client = _get_client()
+        prompt = f"""You are a financial news sentiment analyst.
+Analyze the sentiment of the following news article from the perspective of its impact on stock prices.
+Consider not only direct financial metrics but also geopolitical risks, macroeconomic events, and market sentiment.
 
-        if compound >= 0.05:
-            label = "positive"
-        elif compound <= -0.05:
-            label = "negative"
-        else:
+Respond ONLY in JSON format with no extra text:
+{{
+  "label": "positive" or "negative" or "neutral",
+  "score": float between -1.0 and 1.0,
+  "reason": "brief explanation in English (1-2 sentences)"
+}}
+
+News:
+{text[:2000]}"""
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=200,
+        )
+
+        raw = response.choices[0].message.content.strip()
+
+        # JSON 파싱
+        result = json.loads(raw)
+        label  = result.get("label", "neutral")
+        score  = round(float(result.get("score", 0.0)), 4)
+        reason = result.get("reason", "")
+
+        # label 유효성 검사
+        if label not in ("positive", "negative", "neutral"):
             label = "neutral"
+        score = max(-1.0, min(1.0, score))
 
-        return {"label": label, "score": compound}
+        return {"label": label, "score": score, "reason": reason}
 
+    except json.JSONDecodeError as e:
+        logger.warning(f"[sentiment] JSON 파싱 실패: {e}")
+        return {"label": "neutral", "score": 0.0, "reason": ""}
     except Exception as e:
-        logger.warning(f"[sentiment] 분석 실패: {e}")
-        return {"label": "neutral", "score": 0.0}
+        logger.warning(f"[sentiment] GPT 분석 실패: {e}")
+        return {"label": "neutral", "score": 0.0, "reason": ""}
 
 
 def analyze_articles(articles: list[dict]) -> list[dict]:
@@ -59,18 +90,20 @@ def analyze_articles(articles: list[dict]) -> list[dict]:
 
     출력:
     [{"url": ..., "title": ..., "content": ..., "date": ...,
-      "sentiment_label": "positive", "sentiment_score": 0.82}, ...]
+      "sentiment_label": "positive",
+      "sentiment_score": 0.8,
+      "sentiment_reason": "..."}, ...]
     """
     results = []
     for article in articles:
-        # content가 있으면 content 기준, 없으면 title 기준으로 분석
         text = article.get("content") or article.get("title") or ""
         sentiment = analyze_sentiment(text)
 
         results.append({
             **article,
-            "sentiment_label": sentiment["label"],
-            "sentiment_score": sentiment["score"],
+            "sentiment_label":  sentiment["label"],
+            "sentiment_score":  sentiment["score"],
+            "sentiment_reason": sentiment["reason"],
         })
 
     pos = sum(1 for r in results if r["sentiment_label"] == "positive")
