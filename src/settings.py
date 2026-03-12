@@ -52,5 +52,5 @@ PRICE_INTERVAL: str = os.getenv("PRICE_INTERVAL", "1d")
 # ── API ───────────────────────────────────────────────────────
 API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
 API_PORT: int = int(os.getenv("API_PORT", "8000"))
-
+OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
