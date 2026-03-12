@@ -8,7 +8,6 @@ from settings import TICKERS, PRICE_PERIOD, PRICE_INTERVAL
 logger = logging.getLogger(__name__)
 
 YF_CHART_URL    = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-YF_SUMMARY_URL  = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
 
 HEADERS = {
     "User-Agent": (
@@ -121,43 +120,6 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
 
     logger.info(f"[price_fetcher] {ticker} {len(results)}개 수집 완료")
     return results
-
-
-def fetch_fundamental(ticker: str) -> dict | None:
-    """
-    Yahoo Finance quoteSummary API로 펀더멘털 데이터 수집.
-    시가총액(market_cap), PER, PBR 반환.
-    """
-    url = YF_SUMMARY_URL.format(ticker=ticker)
-    params = {"modules": "summaryDetail,defaultKeyStatistics"}
-
-    try:
-        resp = requests.get(url, headers=HEADERS, params=params, timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        logger.error(f"[price_fetcher] {ticker} 펀더멘털 요청 실패: {e}")
-        return None
-
-    try:
-        summary = data["quoteSummary"]["result"][0]
-        detail  = summary.get("summaryDetail", {})
-        stats   = summary.get("defaultKeyStatistics", {})
-
-        market_cap = detail.get("marketCap", {}).get("raw")
-        per        = detail.get("trailingPE", {}).get("raw")
-        pbr        = stats.get("priceToBook", {}).get("raw")
-
-        return {
-            "ticker":     ticker,
-            "date":       datetime.now().strftime("%Y-%m-%d"),
-            "market_cap": round(float(market_cap), 2) if market_cap else None,
-            "per":        round(float(per), 4)        if per        else None,
-            "pbr":        round(float(pbr), 4)        if pbr        else None,
-        }
-    except Exception as e:
-        logger.warning(f"[price_fetcher] {ticker} 펀더멘털 파싱 실패: {e}")
-        return None
 
 
 def fetch_market_indicators(period: str = PRICE_PERIOD) -> list[dict]:
