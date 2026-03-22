@@ -174,6 +174,7 @@ def upsert_market_indicators(market_data: list[dict]) -> int:
         return 0
 
     rows = []
+    seen = set()
     for d in market_data:
         try:
             key = (d["ticker"], d["date"])
