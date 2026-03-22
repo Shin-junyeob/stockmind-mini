@@ -64,8 +64,13 @@ def upsert_stock_prices(price_data: list[dict]) -> int:
         return 0
 
     rows = []
+    seen = set()
     for d in price_data:
         try:
+            key = (d["ticker"], d["date"])
+            if key in seen:
+                continue
+            seen.add(key)
             rows.append({
                 "ticker":           d["ticker"],
                 "date":             date.fromisoformat(d["date"]),
