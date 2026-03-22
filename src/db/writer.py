@@ -176,7 +176,7 @@ def upsert_market_indicators(market_data: list[dict]) -> int:
     rows = []
     for d in market_data:
         try:
-            key = )d["ticker"], d["date"])
+            key = (d["ticker"], d["date"])
             if key in seen:
                 continue
             seen.add(key)
