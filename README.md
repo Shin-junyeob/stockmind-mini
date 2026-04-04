@@ -73,6 +73,13 @@ stockmind-mini/
 │   │   └── writer.py           # DB 저장 (upsert, 중복방지)
 │   ├── api/
 │   │   └── main.py             # FastAPI 엔드포인트
+│   ├── ml/
+│   │   ├── features.py         # Model A feature 엔지니어링 (LSTM 시퀀스)
+│   │   ├── chart_features.py   # Model B feature 엔지니어링 (차트패턴)
+│   │   ├── lstm_model.py       # LSTM 모델 정의
+│   │   ├── xgb_model.py        # XGBoost 모델 정의
+│   │   ├── train_a.py          # Model A 학습 (LSTM+XGBoost 스태킹)
+│   │   └── train_b.py          # Model B 학습 (차트패턴 + XGBoost)
 │   ├── main.py                 # 파이프라인 오케스트레이터
 │   └── settings.py             # 환경변수 설정
 ├── tests/
@@ -189,14 +196,18 @@ feature/* → dev → main
 | CI DB 컬럼 없음 | init_db가 ALTER TABLE 미실행 | init_db에 마이그레이션 로직 추가 |
 | 펀더멘털 수집 401 에러 | Yahoo Finance API 정책 변경 | 펀더멘털 수집 보류, 추후 yfinance로 대체 예정 |
 | Docker healthcheck 실패 | 컨테이너에 curl 미설치 | Dockerfile에 curl 추가 |
+| 시장 지표/주가 upsert 오류 | 배치 내 중복 데이터로 PostgreSQL 유니크 제약 위반 | upsert 전 pandas 중복 제거 로직 추가 |
+| Dockerfile 빌드 오류 | 멀티스테이지 블록 중복 작성 | 중복 블록 제거 |
 
 ---
 
 ## 향후 개발 계획
 
-- [ ] 과거 데이터 수집 (backfill.py)
-- [ ] 주가 기반 예측 모델 (LSTM) - Model A
-- [ ] 감정분석 기반 예측 모델 - Model B
-- [ ] 앙상블 메타모델 (Model A + B, 가중치 튜닝)
+- [x] 과거 데이터 수집 (backfill.py)
+- [x] Model A: 주가 기반 예측 모델 (LSTM + XGBoost 스태킹) - 학습 완료
+- [x] Model B: 차트패턴 기반 예측 모델 (규칙 기반 feature + XGBoost) - 학습 완료
+- [ ] Model A/B 예측값 DB 저장 + API 엔드포인트 추가
+- [ ] Model C: 감정분석 기반 예측 모델
+- [ ] 앙상블 메타모델 (Model A + B + C, 가중치 튜닝)
 - [ ] 백테스팅 (예측 정확도 검증)
 - [ ] AI Agent (LangGraph, 자연어 투자 인사이트)
