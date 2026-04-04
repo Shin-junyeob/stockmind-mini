@@ -15,6 +15,7 @@ __pycache__/
 
 # 데이터
 data/
+models/
 
 # 키 파일
 *.pem

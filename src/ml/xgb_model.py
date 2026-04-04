@@ -9,6 +9,7 @@ import logging
 import numpy as np
 import xgboost as xgb
 from sklearn.metrics import accuracy_score, classification_report
+from sklearn.utils.class_weight import compute_sample_weight
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +72,11 @@ def train_xgb(
         objective="multi:softprob",
     )
 
+    sample_weights = compute_sample_weight(class_weight="balanced", y=y_train)
+
     model.fit(
         X_train, y_train,
+        sample_weight=sample_weights,
         eval_set=[(X_val, y_val)],
         verbose=False,
     )
