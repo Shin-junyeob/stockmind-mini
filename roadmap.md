@@ -93,6 +93,18 @@
 
 ---
 
+### v1.4 - 버그 픽스 (2026.03~04)
+
+**수정한 것**
+- 시장 지표 중복 upsert 버그: `upsert_market_indicators()`에 중복 데이터 사전 제거 로직 추가
+- 주가 중복 upsert 버그: `upsert_stock_prices()`에 동일하게 중복 제거 적용
+- Dockerfile 내용 중복: 동일한 멀티스테이지 빌드 블록이 두 번 작성된 문제 제거
+
+**트러블슈팅**
+- 같은 (ticker, date) 조합의 데이터가 배치 내에 두 번 이상 포함될 경우 ON CONFLICT가 동작하기 전에 PostgreSQL 유니크 제약 위반 발생 → upsert 호출 전 pandas로 중복 제거
+
+---
+
 ## 현재 상태
 
 ```
@@ -149,19 +161,20 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 ### Model A: LSTM + XGBoost 스태킹 (주가 데이터 기반)
 
 ```
-⬜ Feature 설계
-   - 입력: 최근 30일치 시퀀스 (윈도우)
+✅ Feature 설계
+   - 입력: 최근 20일치 시퀀스 (윈도우)
    - close, volume, price_change_pct
    - MA5, MA20, MA60, RSI
    - 시장 지표 (KOSPI/NASDAQ, VIX)
 
-⬜ LSTM 모델 학습
+✅ LSTM 모델 학습
    - 출력: up/down/flat 확률값
    - 예측값을 XGBoost의 feature로 사용
 
-⬜ XGBoost 모델 학습
+✅ XGBoost 모델 학습
    - 입력: LSTM 출력 + 테이블 feature
    - 출력: 최종 up/down/flat
+   - 학습된 모델: models/{ticker}_lstm_*.pt, models/{ticker}_xgb_*.pkl
 
 ⬜ 예측값을 feature A로 DB 저장
 ⬜ API 엔드포인트 추가 (/stocks/{ticker}/prediction)
@@ -175,14 +188,13 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
   데이터가 더 쌓이면 시도 (현재는 데이터 부족)
 - 규칙 기반 차트패턴 feature + XGBoost로 우선 구현
 
-⬜ 규칙 기반 차트패턴 feature 설계
+✅ 규칙 기반 차트패턴 feature 설계 (chart_features.py)
    - 골든크로스 (MA5 > MA20 교차) → 0/1
    - 데드크로스 (MA5 < MA20 교차) → 0/1
    - RSI 과매수 (RSI > 70) → 0/1
    - RSI 과매도 (RSI < 30) → 0/1
-   - 볼린저밴드 이탈 등
 
-⬜ XGBoost 모델 학습
+✅ XGBoost 모델 학습 (train_b.py)
 ⬜ 예측값을 feature B로 DB 저장
 ```
 
@@ -244,8 +256,9 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 | v1.1 아키텍처 변경 | ✅ 완료 | 2026.03 | 2026.03 |
 | v1.2 데이터 확장 | ✅ 완료 | 2026.03 | 2026.03 |
 | v1.3 과거 데이터 수집 | ✅ 완료 | 2026.03 | 2026.03 |
-| 2단계 Model A (LSTM+XGBoost) | 🔄 진행중 | 2026.03 | - |
-| 2단계 Model B (차트패턴) | ⬜ 대기 | - | - |
+| v1.4 버그 픽스 | ✅ 완료 | 2026.03 | 2026.04 |
+| 2단계 Model A (LSTM+XGBoost) | 🔄 학습완료, 통합 대기 | 2026.03 | - |
+| 2단계 Model B (차트패턴) | 🔄 학습완료, 통합 대기 | 2026.04 | - |
 | 3단계 Model C (감정분석) | ⬜ 대기 | - | - |
 | 4단계 앙상블 메타모델 | ⬜ 대기 | - | - |
 | 5단계 AI Agent | ⬜ 대기 | - | - |

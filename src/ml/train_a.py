@@ -22,7 +22,7 @@ from datetime import datetime
 
 import numpy as np
 from sklearn.metrics import accuracy_score, classification_report
-
+from sklearn.preprocessing import StandardScaler
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
 from dotenv import load_dotenv
@@ -74,48 +74,103 @@ def train_pipeline(ticker: str) -> dict:
 
     # ── 1. 데이터 로드 ────────────────────────────────────────
     df = load_data(ticker)
-    if len(df) < 50:
+    if len(df) < 80:
         logger.error(f"[{ticker}] 데이터 부족: {len(df)}행 (최소 50행 필요)")
         return {}
 
-    # ── 2. Feature 엔지니어링 ─────────────────────────────────
-    X_seq, X_tab, y, dates, scaler = build_sequences(df)
+    # ── 2. Feature 엔지니어링 (스케일링 없이 raw 반환) ─────────────────────────────────
+    X_seq, X_tab, y, dates = build_sequences(df)
     input_size = X_seq.shape[2]
+    window = X_seq.shape[1]
+    n = len(X_seq)
 
-    logger.info(f"[{ticker}] 클래스 분포: down={sum(y==0)} flat={sum(y==1)} up={sum(y==2)}")
+    logger.info(f"[{ticker}] 전체 샘플: {n} | 클래스 분포: down={sum(y==0)} flat={sum(y==1)} up={sum(y==2)}")
 
-    # ── 3. y값 전체 재매핑 ────────────────────────────────────
-    y_mapped, class_map, inv_map = remap_labels(y)
+    # ── 3. 3-way split (시계열 순서 유지) ────────────────────────────────────
+    split_lstm = int(n * 0.6)   # 60% LSTM 학습
+    split_xgb = int(n * 0.8)    # 20% XGBoost 학습, 20% 최종 테스트
+
+    X_seq_lstm = X_seq[:split_lstm]
+    X_tab_lstm = X_tab[:split_lstm]
+    y_lstm = y[:split_lstm]
+
+    X_seq_xgb = X_seq[split_lstm:split_xgb]
+    X_tab_xgb = X_tab[split_lstm:split_xgb]
+    y_xgb = y[split_lstm:split_xgb]
+
+    X_seq_test = X_seq[split_xgb:]
+    X_tab_test = X_tab[split_xgb:]
+    y_test = y[split_xgb:]
+
+    # ── 4. Scaler: LSTM 학습 데이터만으로 fit ───────────────────────────────────
+    n_features = input_size
+    scaler = StandardScaler()
+
+    X_seq_lstm = scaler.fit_transform(
+        X_seq_lstm.reshape(-1, n_features)
+    ).reshape(-1, window, n_features).astype(np.float32)
+
+    X_seq_xgb = scaler.transform(
+        X_seq_xgb.reshape(-1, n_features)
+    ).reshape(-1, window, n_features).astype(np.float32)
+
+    X_seq_test = scaler.transform(
+        X_seq_test.reshape(-1, n_features)
+    ).reshape(-1, window, n_features).astype(np.float32)
+
+    X_tab_lstm = scaler.transform(X_tab_lstm).astype(np.float32)
+    X_tab_xgb = scaler.transform(X_tab_xgb).astype(np.float32)
+    X_tab_test = scaler.transform(X_tab_test).astype(np.float32)
+
+    # ── 5. y값 재매핑 (전체 y 기준으로 먼저 매핑 후 split) ─────
+    y_all_mapped, class_map, inv_map = remap_labels(y)
     n_classes = len(class_map)
 
-    # ── 4. LSTM 학습 ──────────────────────────────────────────
+    y_lstm_mapped = y_all_mapped[:split_lstm]
+    y_xgb_mapped = y_all_mapped[split_lstm:split_xgb]
+    y_test_mapped = y_all_mapped[split_xgb:]
+
+    def apply_map(arr):
+        return np.array([class_map.get(int(c), 0) for c in arr], dtype=np.int64)
+    
+    y_xgb_mapped = apply_map(y_xgb)
+    y_test_mapped = apply_map(y_test)
+
+
+    # ── 6. LSTM 학습 (60%) ───────────────────────────────────
     lstm_model = train_lstm(
-        X_seq=X_seq,
-        y=y_mapped,
+        X_seq=X_seq_lstm,
+        y=y_lstm_mapped,
         input_size=input_size,
         epochs=50,
         batch_size=16,
         lr=1e-3,
     )
 
-    # ── 5. LSTM 확률값 추출 ───────────────────────────────────
-    lstm_proba = predict_proba_lstm(lstm_model, X_seq)
-    logger.info(f"[{ticker}] LSTM 확률값 shape: {lstm_proba.shape}")
+    # ── 7. LSTM → xgb_train 예측 (out-of-fold, 누수 없음) ─────
+    lstm_proba_xgb = predict_proba_lstm(lstm_model, X_seq_xgb)
+    logger.info(f"[{ticker}] LSTM out-of-fold 확률값 shape: {lstm_proba_xgb.shape}")
 
-    # ── 6. XGBoost feature 결합 + 학습 ───────────────────────
-    X_combined = build_xgb_features(lstm_proba, X_tab)
-    xgb_model  = train_xgb(X_combined, y_mapped)
 
-    # ── 7. 최종 성능 평가 ─────────────────────────────────────
-    split    = int(len(X_combined) * 0.8)
-    X_test   = X_combined[split:]
-    y_test   = y_mapped[split:]
+    # ── 8. XGBoost 학습 (20%) ─────────────────────────────────────
+    # xgb 구간에 없는 클래스가 있을 수 있으므로 로컬 재매핑
+    unique_xgb = np.unique(y_xgb_mapped)
+    xgb_remap = {c: i for i, c in enumerate(unique_xgb)}
+    xgb_inv = {i: c for c, i in xgb_remap.items()}
+    y_xgb_for_train = np.array([xgb_remap[c] for c in y_xgb_mapped], dtype=np.int64)
 
-    preds_mapped, proba = predict_xgb(xgb_model, X_test)
+    X_combined_xgb = build_xgb_features(lstm_proba_xgb, X_tab_xgb)
+    xgb_model = train_xgb(X_combined_xgb, y_xgb_for_train)
 
-    # 예측값을 원본 label로 역매핑
+    # ── 9. 최종 성능 평가 (test 20%) ──────────────────────────────────────────
+    lstm_proba_test = predict_proba_lstm(lstm_model, X_seq_test)
+    X_combined_test = build_xgb_features(lstm_proba_test, X_tab_test)
+    preds_xgb_local, _ = predict_xgb(xgb_model, X_combined_test)
+
+    # xgb 로컬 → 글로벌 매핑 → 원본 label
+    preds_mapped = np.array([xgb_inv.get(p, 0) for p in preds_xgb_local])
     preds_orig = np.array([inv_map[p] for p in preds_mapped])
-    y_test_orig = np.array([inv_map[p] for p in y_test])
+    y_test_orig = np.array([inv_map[p] for p in y_test_mapped])
 
     acc = accuracy_score(y_test_orig, preds_orig)
     report = classification_report(
@@ -128,7 +183,7 @@ def train_pipeline(ticker: str) -> dict:
     logger.info(f"[{ticker}] 최종 테스트 정확도: {acc:.4f}")
     logger.info(f"[{ticker}] 분류 리포트:\n{report}")
 
-    # ── 8. 모델 저장 ──────────────────────────────────────────
+    # ── 10. 모델 저장 ──────────────────────────────────────────
     os.makedirs(MODEL_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d")
 
@@ -146,7 +201,6 @@ def train_pipeline(ticker: str) -> dict:
     with open(scaler_path, "wb") as f:
         pickle.dump(scaler, f)
 
-    # class_map, inv_map 저장 (예측 시 역매핑에 필요)
     with open(meta_path, "wb") as f:
         pickle.dump({"class_map": class_map, "inv_map": inv_map, "n_classes": n_classes}, f)
 
