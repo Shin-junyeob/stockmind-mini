@@ -213,21 +213,21 @@ Model C (Sentiment)     ──┘
 |------|----------|------|------|
 | Model A | 20일 시계열 + KOSPI/NASDAQ/VIX | LSTM → XGBoost 스태킹 | 학습 완료 |
 | Model B | 당일 차트패턴 시그널 (33 features) | XGBoost | 학습 완료 |
-| Model C | 뉴스 감성 + 시장 감성 지표 | XGBoost | 진행 중 |
+| Model C | Fear & Greed Index + VIX + 뉴스 감성 | XGBoost | 학습 완료 |
 | Ensemble | Model A/B/C 예측값 결합 | Meta XGBoost | 대기 |
 
 ---
 
 ## 향후 개발 계획
 
-### 진행 중 — Model C (감성 기반 예측)
+### 완료 — Model C (감성 기반 예측)
 
 데이터 확보 한계로 인해 아래 4단계 순서로 접근:
 
 - [x] **1단계**: Finnhub 무료 API 테스트 → 포기 (TSLA 1년치만 가능, 005930.KS 접근 불가)
-- [ ] **2단계**: CNN Fear & Greed Index 수집 (2021년~현재) → 감성 proxy로 단독 사용
-- [ ] **3단계**: Fear & Greed + 기존 VIX 결합 → 시장 감성 복합 feature
-- [ ] **4단계**: 현재 보유 2개월치 뉴스 감성 결과만으로 학습 (최후 수단)
+- [x] **2단계**: CNN Fear & Greed Index 수집 (2021년~현재) → 감성 proxy로 단독 사용
+- [x] **3단계**: Fear & Greed + 기존 VIX 결합 → 시장 감성 복합 feature
+- [x] **4단계**: 현재 보유 2개월치 뉴스 감성 결과만으로 학습 → 3단계 중 up_f1 최고 stage 자동 선택
 
 ### 이후 계획
 
