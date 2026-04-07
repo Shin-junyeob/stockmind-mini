@@ -130,7 +130,7 @@ PRICE_INTERVAL=1d
 
 | 테이블 | 설명 |
 |--------|------|
-| stock_prices | 일별 주가 + MA5/MA20/MA60/RSI |
+| stock_prices | 일별 주가 + High/Low + MA5/MA20/MA60/RSI |
 | news_articles | 뉴스 기사 + GPT 감정분석 결과 |
 | market_indicators | KOSPI, KOSDAQ, 나스닥, VIX |
 | fundamentals | 시가총액, PER, PBR (수집 보류) |
@@ -192,11 +192,54 @@ feature/* → dev → main
 
 ---
 
+## 예측 모델 구조
+
+```
+Model A (LSTM+XGBoost)  ──┐
+Model B (Chart XGBoost) ──┼──► Ensemble Meta-model ──► 최종 예측 (up/down)
+Model C (Sentiment)     ──┘
+```
+
+| 모델 | 입력 신호 | 구조 | 상태 |
+|------|----------|------|------|
+| Model A | 20일 시계열 + KOSPI/NASDAQ/VIX | LSTM → XGBoost 스태킹 | 학습 완료 |
+| Model B | 당일 차트패턴 시그널 (33 features) | XGBoost | 학습 완료 |
+| Model C | 뉴스 감성 + 시장 감성 지표 | XGBoost | 진행 중 |
+| Ensemble | Model A/B/C 예측값 결합 | Meta XGBoost | 대기 |
+
+---
+
 ## 향후 개발 계획
 
+<<<<<<< Updated upstream
 - [ ] 과거 데이터 수집 (backfill.py)
 - [ ] 주가 기반 예측 모델 (LSTM) - Model A
 - [ ] 감정분석 기반 예측 모델 - Model B
 - [ ] 앙상블 메타모델 (Model A + B, 가중치 튜닝)
+=======
+### 진행 중 — Model C (감성 기반 예측)
+
+데이터 확보 한계로 인해 아래 4단계 순서로 접근:
+
+- [x] **1단계**: Finnhub 무료 API 테스트 → 포기 (TSLA 1년치만 가능, 005930.KS 접근 불가)
+- [ ] **2단계**: CNN Fear & Greed Index 수집 (2011년~현재) → 감성 proxy로 단독 사용
+- [ ] **3단계**: Fear & Greed + 기존 VIX 결합 → 시장 감성 복합 feature
+- [ ] **4단계**: 현재 보유 2개월치 뉴스 감성 결과만으로 학습 (최후 수단)
+
+### 이후 계획
+
+- [ ] 앙상블 메타모델 (Model A + B + C 예측값 결합)
+- [ ] 임계값 튜닝 (전체 파이프라인 완성 후)
+>>>>>>> Stashed changes
 - [ ] 백테스팅 (예측 정확도 검증)
+- [ ] API 엔드포인트 추가 (`/stocks/{ticker}/prediction`)
 - [ ] AI Agent (LangGraph, 자연어 투자 인사이트)
+
+### 미래 아이디어 (보류)
+
+**크로스 컴퍼니 학습 (Cross-sectional Learning)**
+- 현재: 2개 종목 × 5년치 ≈ 2,400 샘플
+- 아이디어: 300개 종목 × 1개월치 ≈ 9,000 샘플 (다양성↑)
+- 종목별 특성보다 시장 공통 반응 패턴을 더 많이 학습할 수 있음
+- 퀀트 분야에서 "cross-sectional learning"으로 불리는 접근법
+- 데이터 수집 인프라 확장 필요 → 모델 성숙 후 시도 예정
