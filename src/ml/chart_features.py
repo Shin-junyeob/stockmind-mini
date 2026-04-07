@@ -142,7 +142,7 @@ CHART_FEATURE_COLS = [
 
 def make_label(df: pd.DataFrame) -> pd.Series:
     """다음날 방향을 label로 생성. up=2, flat=1, down=0"""
-    label_map = {"up": 2, "flat": 1, "down": 0}
+    label_map = {"up": 1, "flat": 0, "down": 0}
     return df["direction"].shift(-1).map(label_map)
 
 
@@ -168,5 +168,5 @@ def build_chart_dataset(df: pd.DataFrame):
     dates  = df["date"][valid_mask].shift(-1).values
 
     logger.info(f"[chart_features] 데이터셋 생성 완료: X={X.shape}, y={y.shape}")
-    logger.info(f"[chart_features] 클래스 분포: down={sum(y==0)} flat={sum(y==1)} up={sum(y==2)}")
+    logger.info(f"[chart_features] 클래스 분포: down={sum(y==0)} up={sum(y==1)}")
     return X, y, dates
