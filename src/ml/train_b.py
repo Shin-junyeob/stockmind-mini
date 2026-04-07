@@ -19,7 +19,7 @@ import pickle
 from datetime import datetime
 
 import numpy as np
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, precision_score, f1_score
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
@@ -83,7 +83,8 @@ def train_pipeline_b(ticker: str) -> dict:
     preds_orig  = np.array([inv_map[p] for p in preds_mapped])
     y_test_orig = np.array([inv_map[p] for p in y_test])
 
-    acc = accuracy_score(y_test_orig, preds_orig)
+    up_precision = precision_score(y_test_orig, preds_orig, pos_label=1, zero_division=0)
+    up_f1        = f1_score(y_test_orig, preds_orig, pos_label=1, zero_division=0)
     report = classification_report(
         y_test_orig, preds_orig,
         target_names=["down", "up"],
@@ -91,7 +92,7 @@ def train_pipeline_b(ticker: str) -> dict:
         zero_division=0,
     )
 
-    logger.info(f"[{ticker}] 최종 테스트 정확도: {acc:.4f}")
+    logger.info(f"[{ticker}] up Precision: {up_precision:.4f} | up F1: {up_f1:.4f}")
     logger.info(f"[{ticker}] 분류 리포트:\n{report}")
 
     # ── 6. 모델 저장 ──────────────────────────────────────────
@@ -113,9 +114,10 @@ def train_pipeline_b(ticker: str) -> dict:
     logger.info(f"=== [{ticker}] Model B 학습 파이프라인 완료 ===")
 
     return {
-        "ticker":   ticker,
-        "accuracy": acc,
-        "report":   report,
+        "ticker":       ticker,
+        "up_precision": up_precision,
+        "up_f1":        up_f1,
+        "report":       report,
     }
 
 
@@ -128,4 +130,4 @@ if __name__ == "__main__":
 
     logger.info("=== 전체 Model B 학습 완료 ===")
     for ticker, result in results.items():
-        logger.info(f"{ticker}: accuracy={result['accuracy']:.4f}")
+        logger.info(f"{ticker}: up_precision={result['up_precision']:.4f} | up_f1={result['up_f1']:.4f}")

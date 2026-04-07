@@ -26,8 +26,8 @@ class LSTMClassifier(nn.Module):
     def __init__(
         self,
         input_size: int,
-        hidden_size: int = 64,
-        num_layers: int = 2,
+        hidden_size: int = 32,
+        num_layers: int = 1,
         dropout: float = 0.3,
         num_classes: int = 3,   # up / flat / down
     ):
