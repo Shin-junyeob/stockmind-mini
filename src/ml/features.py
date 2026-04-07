@@ -86,7 +86,7 @@ def make_label(df: pd.DataFrame) -> pd.Series:
     다음날 방향을 label로 생성.
     up=2, flat=1, down=0
     """
-    label_map = {"up": 2, "flat": 1, "down": 0}
+    label_map = {"up": 1, "flat": 0, "down": 0}
     # 다음날 direction을 현재 행의 label로 사용
     labels = df["direction"].shift(-1).map(label_map)
     return labels
