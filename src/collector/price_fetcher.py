@@ -58,6 +58,8 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
         timestamps = result["timestamp"]
         ohlcv      = result["indicators"]["quote"][0]
         opens      = ohlcv["open"]
+        highs      = ohlcv["high"]
+        lows       = ohlcv["low"]
         closes     = ohlcv["close"]
         volumes    = ohlcv["volume"]
     except (KeyError, IndexError, TypeError) as e:
@@ -76,17 +78,19 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
     results = []
     valid_idx = 0  # None 제외한 인덱스 추적
 
-    for ts, o, c, v in zip(timestamps, opens, closes, volumes):
-        if o is None or c is None:
+    for ts, o, h, l, c, v in zip(timestamps, opens, highs, lows, closes, volumes):
+        if o is None or h is None or l is None or c is None:
             continue
         try:
             date_str         = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
             open_price       = round(float(o), 4)
+            high_price       = round(float(h), 4)
+            low_price        = round(float(l), 4)
             close_price      = round(float(c), 4)
             volume           = int(v) if v else 0
             price_change     = round(close_price - open_price, 4)
             price_change_pct = round((price_change / open_price) * 100, 4) if open_price else 0.0
-            direction        = "up" if price_change > 0 else ("down" if price_change < 0 else "flat")
+            direction        = "up" if price_change > 0 else "down"
 
             # 기술적 지표 (값 없으면 None)
             ma5  = round(float(ma5_series.iloc[valid_idx]), 4)  if valid_idx < len(ma5_series)  and not pd.isna(ma5_series.iloc[valid_idx])  else None
@@ -98,6 +102,8 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
                 "ticker":           ticker,
                 "date":             date_str,
                 "open":             open_price,
+                "high":             high_price,
+                "low":              low_price,
                 "close":            close_price,
                 "volume":           volume,
                 "price_change":     price_change,

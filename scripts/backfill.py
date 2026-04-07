@@ -1,13 +1,13 @@
 """
 backfill.py - 1회성 과거 데이터 수집 스크립트
 
-용도: 예측모델 학습에 필요한 과거 1년치 주가 + 시장 지표 데이터 수집
+용도: 예측모델 학습에 필요한 과거 5년치 주가 + 시장 지표 데이터 수집
 실행: PYTHONPATH=src python scripts/backfill.py
 
 주의:
 - 1회만 실행하면 됨 (중복 데이터는 upsert로 자동 처리)
 - 매일 자동 수집(cron)과 별개로 동작
-- PRICE_PERIOD 환경변수와 무관하게 항상 1y로 수집
+- PRICE_PERIOD 환경변수와 무관하게 항상 5y로 수집
 """
 
 import logging
@@ -30,13 +30,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-BACKFILL_PERIOD   = "1y"   # 1년치 과거 데이터
+BACKFILL_PERIOD   = "5y"   # 5년치 과거 데이터
 BACKFILL_INTERVAL = "1d"   # 일봉
 
 
 def run_backfill(tickers: list[str] = TICKERS) -> None:
     """
-    과거 1년치 주가 + 시장 지표 수집 및 DB 저장.
+    과거 5년치 주가 + 시장 지표 수집 및 DB 저장.
     기술적 지표 (MA5, MA20, MA60, RSI) 자동 계산 포함.
     """
     logger.info("=== backfill 시작 ===")

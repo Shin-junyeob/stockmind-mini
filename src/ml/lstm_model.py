@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+from sklearn.utils.class_weight import compute_class_weight
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,8 @@ class LSTMClassifier(nn.Module):
     def __init__(
         self,
         input_size: int,
-        hidden_size: int = 64,
-        num_layers: int = 2,
+        hidden_size: int = 32,
+        num_layers: int = 1,
         dropout: float = 0.3,
         num_classes: int = 3,   # up / flat / down
     ):
@@ -90,9 +91,14 @@ def train_lstm(
     )
 
     # 모델 / 옵티마이저 / 손실함수
-    model = LSTMClassifier(input_size=input_size).to(device)
+    n_classes = len(np.unique(y_train))
+    model = LSTMClassifier(input_size=input_size, num_classes=n_classes).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
+    
+    classes = np.unique(y_train)
+    weights = compute_class_weight(class_weight="balanced", classes=classes, y=y_train)
+    weight_tensor = torch.tensor(weights, dtype=torch.float32).to(device)
+    criterion = nn.CrossEntropyLoss(weight=weight_tensor)
 
     best_val_loss = float("inf")
     best_state = None

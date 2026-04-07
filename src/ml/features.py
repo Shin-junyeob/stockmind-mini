@@ -9,7 +9,6 @@ import logging
 import numpy as np
 import pandas as pd
 from sqlalchemy import create_engine, text
-from sklearn.preprocessing import StandardScaler
 
 from settings import DATABASE_URL
 
@@ -87,7 +86,7 @@ def make_label(df: pd.DataFrame) -> pd.Series:
     다음날 방향을 label로 생성.
     up=2, flat=1, down=0
     """
-    label_map = {"up": 2, "flat": 1, "down": 0}
+    label_map = {"up": 1, "flat": 0, "down": 0}
     # 다음날 direction을 현재 행의 label로 사용
     labels = df["direction"].shift(-1).map(label_map)
     return labels
@@ -106,13 +105,6 @@ def build_sequences(df: pd.DataFrame, window: int = WINDOW_SIZE):
     feature_cols = ALL_FEATURES
     df_feat = df[feature_cols].copy()
 
-    # 스케일링
-    scaler = StandardScaler()
-    df_scaled = pd.DataFrame(
-        scaler.fit_transform(df_feat),
-        columns=feature_cols
-    )
-
     labels = make_label(df)
 
     X_seq, X_tab, y, dates = [], [], [], []
@@ -122,8 +114,8 @@ def build_sequences(df: pd.DataFrame, window: int = WINDOW_SIZE):
         if pd.isna(labels.iloc[i]):
             continue
 
-        seq = df_scaled.iloc[i - window:i].values   # (window, features)
-        tab = df_scaled.iloc[i].values               # (features,)
+        seq = df_feat.iloc[i - window:i].values   # (window, features)
+        tab = df_feat.iloc[i].values               # (features,)
         label = int(labels.iloc[i])
         date  = df["date"].iloc[i + 1]               # 예측 대상 날짜
 
@@ -137,4 +129,4 @@ def build_sequences(df: pd.DataFrame, window: int = WINDOW_SIZE):
     y     = np.array(y, dtype=np.int64)
 
     logger.info(f"[features] 시퀀스 생성 완료: X_seq={X_seq.shape}, X_tab={X_tab.shape}, y={y.shape}")
-    return X_seq, X_tab, y, dates, scaler
+    return X_seq, X_tab, y, dates

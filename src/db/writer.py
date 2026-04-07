@@ -28,6 +28,8 @@ def init_db() -> None:
         "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS ma20 FLOAT",
         "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS ma60 FLOAT",
         "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS rsi  FLOAT",
+        "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS high FLOAT",
+        "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS low  FLOAT",
         "ALTER TABLE news_articles ADD COLUMN IF NOT EXISTS sentiment_reason TEXT",
     ]
 
@@ -75,6 +77,8 @@ def upsert_stock_prices(price_data: list[dict]) -> int:
                 "ticker":           d["ticker"],
                 "date":             date.fromisoformat(d["date"]),
                 "open":             d["open"],
+                "high":             d.get("high"),
+                "low":              d.get("low"),
                 "close":            d["close"],
                 "volume":           d["volume"],
                 "price_change":     d["price_change"],
@@ -98,6 +102,8 @@ def upsert_stock_prices(price_data: list[dict]) -> int:
             index_elements=["ticker", "date"],
             set_={
                 "open":             stmt.excluded.open,
+                "high":             stmt.excluded.high,
+                "low":              stmt.excluded.low,
                 "close":            stmt.excluded.close,
                 "volume":           stmt.excluded.volume,
                 "price_change":     stmt.excluded.price_change,

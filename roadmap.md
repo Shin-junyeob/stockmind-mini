@@ -96,8 +96,6 @@
 
 ---
 
-<<<<<<< Updated upstream
-=======
 ### v1.4 - 버그 픽스 (2026.03~04)
 
 **수정한 것**
@@ -127,7 +125,6 @@
 - Model B feature 33개로 확장
   - 캔들스틱 패턴: doji, hammer, shooting_star, bullish/bearish engulfing
   - Stochastic %K/%D, ATR ratio, OBV slope, ROC 5/10일
-- stock_prices에 high/low 컬럼 추가 → 캔들스틱 패턴 계산 가능
 
 **현재 성능 (2026.04 기준)**
 
@@ -142,7 +139,6 @@
 
 ---
 
->>>>>>> Stashed changes
 ## 현재 상태
 
 ```
@@ -202,21 +198,6 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 ### Model A: LSTM + XGBoost 스태킹 (주가 데이터 기반)
 
 ```
-<<<<<<< Updated upstream
-⬜ Feature 설계
-   - 입력: 최근 30일치 시퀀스 (윈도우)
-   - close, volume, price_change_pct
-   - MA5, MA20, MA60, RSI
-   - 시장 지표 (KOSPI/NASDAQ, VIX)
-
-⬜ LSTM 모델 학습
-   - 출력: up/down/flat 확률값
-   - 예측값을 XGBoost의 feature로 사용
-
-⬜ XGBoost 모델 학습
-   - 입력: LSTM 출력 + 테이블 feature
-   - 출력: 최종 up/down/flat
-=======
 ✅ Feature 설계 (binary classification: up=1, down/flat=0)
    - 입력: 최근 20일치 시퀀스 (윈도우)
    - close, volume, price_change_pct, MA5, MA20, MA60, RSI
@@ -230,7 +211,6 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 ✅ LSTM 모델 (1-layer, hidden=32, class weight 적용)
 ✅ XGBoost 모델 (sample weight 적용)
    - 학습된 모델: models/{ticker}_lstm_*.pt, models/{ticker}_xgb_*.pkl
->>>>>>> Stashed changes
 
 ⬜ 예측값을 feature A로 DB 저장
 ⬜ API 엔드포인트 추가 (/stocks/{ticker}/prediction)
@@ -239,19 +219,6 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 ### Model B: 차트패턴 기반 예측 (규칙 기반 + XGBoost)
 
 ```
-<<<<<<< Updated upstream
-설계 방향:
-- 차트패턴을 이미지로 변환 후 CNN 분류는
-  데이터가 더 쌓이면 시도 (현재는 데이터 부족)
-- 규칙 기반 차트패턴 feature + XGBoost로 우선 구현
-
-⬜ 규칙 기반 차트패턴 feature 설계
-   - 골든크로스 (MA5 > MA20 교차) → 0/1
-   - 데드크로스 (MA5 < MA20 교차) → 0/1
-   - RSI 과매수 (RSI > 70) → 0/1
-   - RSI 과매도 (RSI < 30) → 0/1
-   - 볼린저밴드 이탈 등
-=======
 ✅ 33개 feature 설계 (chart_features.py)
    - 이동평균 크로스: golden_cross, dead_cross, ma5_slope, price_vs_ma20
    - RSI: rsi, rsi_overbought, rsi_oversold
@@ -262,9 +229,8 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
    - Stochastic: stoch_k, stoch_d, stoch_oversold, stoch_overbought
    - ATR: atr_ratio
    - ROC: roc_5, roc_10
->>>>>>> Stashed changes
 
-⬜ XGBoost 모델 학습
+✅ XGBoost 모델 학습 (train_b.py)
 ⬜ 예측값을 feature B로 DB 저장
 ```
 
@@ -290,34 +256,20 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
      005930.KS: 무료 티어 완전 접근 불가 ("You don't have access to this resource.")
    - 두 종목을 동일한 방식으로 처리해야 하므로 진행 의미 없음 → 포기
 
-2단계: CNN Fear & Greed Index 단독 사용
-   - 2011년~현재 일별 데이터 수집 가능 (비공식 API)
+2단계: CNN Fear & Greed Index 단독 사용 🔄 진행 중
+   - CNN 비공식 API로 2021년 초~현재 일별 데이터 수집 가능
    - 단일 지수 (0~100) + label (Extreme Fear/Fear/Neutral/Greed/Extreme Greed)
-   - 주가 데이터(5년)와 기간 완전 일치
+   - 주가 데이터(5년)와 기간 완전 일치 (1,322개 데이터 포인트 확인)
    - 단점: 시장 전체 지수, 종목별 특성 반영 안됨
 
 3단계: Fear & Greed + VIX 결합 (기대 효과 가장 높음)
    - VIX는 이미 5년치 DB에 존재
    - Fear & Greed + VIX = 두 개의 독립적인 감성 proxy
    - 학습 데이터 길이가 주가 데이터와 완전히 일치
-   - VIX: 옵션시장 공포 지수 / Fear&Greed: 복합 심리 지수
 
 4단계: 현재 보유 2개월치 뉴스 감성만 사용 (최후 수단)
    - 주가 데이터의 일부 구간(2개월)만 사용
    - 데이터 부족으로 성능 기대치 낮음
-```
-
-### 설계 결정 이유
-
-```
-뉴스 텍스트 backfill이 어려운 이유:
-- Yahoo Finance: 최근 1~2주치만 접근 가능
-- NewsAPI free: 최근 1개월 제한
-- Finnhub: 수년치 가능하나 종목별 커버리지 불확실
-- Bloomberg/Refinitiv: 유료 (고비용)
-
-→ 1단계(Finnhub)부터 순차적으로 시도, 안되면 다음 단계로 진행
-→ 3단계(Fear&Greed+VIX)가 현실적으로 가장 안정적인 선택
 ```
 
 ---
@@ -387,18 +339,11 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 | v1.0 기반 구축 | ✅ 완료 | 2026.02 | 2026.02 |
 | v1.1 아키텍처 변경 | ✅ 완료 | 2026.03 | 2026.03 |
 | v1.2 데이터 확장 | ✅ 완료 | 2026.03 | 2026.03 |
-<<<<<<< Updated upstream
-| v1.3 과거 데이터 수집 | ✅ 완료 | 2026.03 | 2026.03 |
-| 2단계 Model A (LSTM+XGBoost) | 🔄 진행중 | 2026.03 | - |
-| 2단계 Model B (차트패턴) | ⬜ 대기 | - | - |
-| 3단계 Model C (감정분석) | ⬜ 대기 | - | - |
-=======
 | v1.3 과거 데이터 수집 (5년치) | ✅ 완료 | 2026.03 | 2026.04 |
 | v1.4 버그 픽스 | ✅ 완료 | 2026.03 | 2026.04 |
 | v1.5 ML 모델 개선 | ✅ 완료 | 2026.04 | 2026.04 |
 | 2단계 Model A (LSTM+XGBoost) | 🔄 학습완료, 통합 대기 | 2026.03 | - |
 | 2단계 Model B (차트패턴 33 features) | 🔄 학습완료, 통합 대기 | 2026.04 | - |
 | 3단계 Model C (감성 기반) | 🔄 진행 중 | 2026.04 | - |
->>>>>>> Stashed changes
 | 4단계 앙상블 메타모델 | ⬜ 대기 | - | - |
 | 5단계 AI Agent | ⬜ 대기 | - | - |
