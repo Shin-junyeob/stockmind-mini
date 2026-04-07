@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 MODEL_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'models')
 
 # label 이름 매핑
-LABEL_NAMES = {0: "down", 1: "flat", 2: "up"}
+LABEL_NAMES = {0: "down", 1: "up"}
 
 
 def remap_labels(y: np.ndarray) -> tuple[np.ndarray, dict, dict]:
@@ -84,7 +84,7 @@ def train_pipeline(ticker: str) -> dict:
     window = X_seq.shape[1]
     n = len(X_seq)
 
-    logger.info(f"[{ticker}] 전체 샘플: {n} | 클래스 분포: down={sum(y==0)} flat={sum(y==1)} up={sum(y==2)}")
+    logger.info(f"[{ticker}] 전체 샘플: {n} | 클래스 분포: down={sum(y==0)} up={sum(y==1)}")
 
     # ── 3. 3-way split (시계열 순서 유지) ────────────────────────────────────
     split_lstm = int(n * 0.6)   # 60% LSTM 학습
@@ -175,8 +175,8 @@ def train_pipeline(ticker: str) -> dict:
     acc = accuracy_score(y_test_orig, preds_orig)
     report = classification_report(
         y_test_orig, preds_orig,
-        target_names=["down", "flat", "up"],
-        labels=[0, 1, 2],
+        target_names=["down", "up"],
+        labels=[0, 1],
         zero_division=0,
     )
 

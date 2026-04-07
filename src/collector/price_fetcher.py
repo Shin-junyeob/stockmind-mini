@@ -86,7 +86,7 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
             volume           = int(v) if v else 0
             price_change     = round(close_price - open_price, 4)
             price_change_pct = round((price_change / open_price) * 100, 4) if open_price else 0.0
-            direction        = "up" if price_change > 0 else ("down" if price_change < 0 else "flat")
+            direction        = "up" if price_change > 0 else "down"
 
             # 기술적 지표 (값 없으면 None)
             ma5  = round(float(ma5_series.iloc[valid_idx]), 4)  if valid_idx < len(ma5_series)  and not pd.isna(ma5_series.iloc[valid_idx])  else None

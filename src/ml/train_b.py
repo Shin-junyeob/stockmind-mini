@@ -38,7 +38,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'models')
-LABEL_NAMES = {0: "down", 1: "flat", 2: "up"}
+LABEL_NAMES = {0: "down", 1: "up"}
 
 
 def remap_labels(y: np.ndarray) -> tuple[np.ndarray, dict, dict]:
@@ -86,8 +86,8 @@ def train_pipeline_b(ticker: str) -> dict:
     acc = accuracy_score(y_test_orig, preds_orig)
     report = classification_report(
         y_test_orig, preds_orig,
-        target_names=["down", "flat", "up"],
-        labels=[0, 1, 2],
+        target_names=["down", "up"],
+        labels=[0, 1],
         zero_division=0,
     )
 
