@@ -58,6 +58,8 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
         timestamps = result["timestamp"]
         ohlcv      = result["indicators"]["quote"][0]
         opens      = ohlcv["open"]
+        highs      = ohlcv["high"]
+        lows       = ohlcv["low"]
         closes     = ohlcv["close"]
         volumes    = ohlcv["volume"]
     except (KeyError, IndexError, TypeError) as e:
@@ -76,12 +78,14 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
     results = []
     valid_idx = 0  # None 제외한 인덱스 추적
 
-    for ts, o, c, v in zip(timestamps, opens, closes, volumes):
-        if o is None or c is None:
+    for ts, o, h, l, c, v in zip(timestamps, opens, highs, lows, closes, volumes):
+        if o is None or h is None or l is None or c is None:
             continue
         try:
             date_str         = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
             open_price       = round(float(o), 4)
+            high_price       = round(float(h), 4)
+            low_price        = round(float(l), 4)
             close_price      = round(float(c), 4)
             volume           = int(v) if v else 0
             price_change     = round(close_price - open_price, 4)
@@ -98,6 +102,8 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
                 "ticker":           ticker,
                 "date":             date_str,
                 "open":             open_price,
+                "high":             high_price,
+                "low":              low_price,
                 "close":            close_price,
                 "volume":           volume,
                 "price_change":     price_change,

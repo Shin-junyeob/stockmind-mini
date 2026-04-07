@@ -20,6 +20,8 @@ class StockPrice(Base):
     ticker            = Column(String(20), nullable=False)
     date              = Column(Date, nullable=False)
     open              = Column(Float, nullable=False)
+    high              = Column(Float, nullable=True)   # 당일 최고가
+    low               = Column(Float, nullable=True)   # 당일 최저가
     close             = Column(Float, nullable=False)
     volume            = Column(Integer, nullable=False)
     price_change      = Column(Float, nullable=False)
