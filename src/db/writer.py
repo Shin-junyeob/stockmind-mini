@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from db.models import Base, StockPrice, NewsArticle, MarketIndicator, Fundamental
+from db.models import Base, StockPrice, NewsArticle, MarketIndicator, Fundamental, FearGreed
 from settings import DATABASE_URL
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,7 @@ def init_db() -> None:
         "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS high FLOAT",
         "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS low  FLOAT",
         "ALTER TABLE news_articles ADD COLUMN IF NOT EXISTS sentiment_reason TEXT",
+        "CREATE TABLE IF NOT EXISTS fear_greed (id SERIAL PRIMARY KEY, date DATE NOT NULL UNIQUE, score FLOAT NOT NULL, rating VARCHAR(20) NOT NULL, created_at TIMESTAMP DEFAULT NOW())",
     ]
 
     with engine.connect() as conn:
@@ -171,6 +172,51 @@ def insert_articles(ticker: str, articles: list[dict]) -> int:
 
     logger.info(f"[writer] 기사 insert 완료: {inserted}건 (전체 {len(rows)}건 중)")
     return inserted
+
+
+# ── FearGreed ────────────────────────────────────────────────
+
+def upsert_fear_greed(fear_greed_data: list[dict]) -> int:
+    """
+    Fear & Greed Index 데이터 upsert (date 중복 시 업데이트).
+    반환값: 처리된 행 수
+    """
+    if not fear_greed_data:
+        return 0
+
+    rows = []
+    seen = set()
+    for d in fear_greed_data:
+        try:
+            key = d["date"]
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "date":   date.fromisoformat(d["date"]),
+                "score":  d["score"],
+                "rating": d["rating"],
+            })
+        except (KeyError, ValueError) as e:
+            logger.warning(f"[writer] Fear&Greed 데이터 변환 오류: {e} → {d}")
+            continue
+
+    if not rows:
+        return 0
+
+    with get_session() as session:
+        stmt = pg_insert(FearGreed).values(rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["date"],
+            set_={
+                "score":  stmt.excluded.score,
+                "rating": stmt.excluded.rating,
+            },
+        )
+        session.execute(stmt)
+
+    logger.info(f"[writer] Fear&Greed upsert 완료: {len(rows)}건")
+    return len(rows)
 
 
 # ── MarketIndicator ───────────────────────────────────────────
