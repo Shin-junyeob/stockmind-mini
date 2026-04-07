@@ -72,6 +72,23 @@ class NewsArticle(Base):
         )
 
 
+class FearGreed(Base):
+    """
+    CNN Fear & Greed Index 일별 데이터
+    date 기준으로 중복 방지
+    """
+    __tablename__ = "fear_greed"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    date       = Column(Date, nullable=False, unique=True)
+    score      = Column(Float, nullable=False)          # 0 ~ 100
+    rating     = Column(String(20), nullable=False)     # extreme fear ~ extreme greed
+    created_at = Column(DateTime, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<FearGreed date={self.date} score={self.score} rating={self.rating}>"
+
+
 class MarketIndicator(Base):
     """
     시장 지표 (KOSPI, KOSDAQ, 나스닥, VIX)
