@@ -9,8 +9,12 @@ from sqlalchemy import select, and_
 from db.writer import init_db, get_session
 from db.models import StockPrice, NewsArticle
 from settings import TICKERS
+from ml.predictor import EnsemblePredictor
 
 logger = logging.getLogger(__name__)
+
+# ticker → EnsemblePredictor 캐시 (startup 시 로드)
+_predictors: dict[str, EnsemblePredictor] = {}
 
 
 # ── Lifespan (startup / shutdown) ────────────────────────────
@@ -18,6 +22,12 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    for ticker in TICKERS:
+        try:
+            _predictors[ticker] = EnsemblePredictor(ticker)
+            logger.info(f"[api] {ticker} 예측 모델 로드 완료")
+        except Exception as e:
+            logger.warning(f"[api] {ticker} 예측 모델 로드 실패 (예측 엔드포인트 사용 불가): {e}")
     logger.info("[api] 서버 시작")
     yield
     logger.info("[api] 서버 종료")
@@ -68,6 +78,21 @@ class DailySummaryResponse(BaseModel):
     positive_count: int
     negative_count: int
     neutral_count: int
+
+
+class ModelProbabilities(BaseModel):
+    model_a: float
+    model_b: float
+    model_c: float
+
+
+class PredictionResponse(BaseModel):
+    ticker: str
+    prediction_date: str
+    based_on_date: str
+    direction: str
+    up_probability: float
+    model_probabilities: ModelProbabilities
 
 
 # ── Endpoints ─────────────────────────────────────────────────
@@ -192,6 +217,42 @@ def get_daily_summary(
             })
 
     return summaries
+
+
+@app.get(
+    "/stocks/{ticker}/prediction",
+    response_model=PredictionResponse,
+    summary="주가 방향 예측",
+)
+def get_prediction(ticker: str):
+    """
+    앙상블 모델 (Model A + B + C → Meta XGBoost)로 내일 주가 방향을 예측.
+
+    - `direction`: up(상승) / down(하락)
+    - `up_probability`: 앙상블 up 확률 (0~1)
+    - `model_probabilities`: 개별 모델의 up 확률
+      - `model_a`: LSTM + XGBoost (시계열)
+      - `model_b`: 차트패턴 XGBoost
+      - `model_c`: 감성 XGBoost (Fear & Greed / VIX / 뉴스)
+    - `based_on_date`: 예측에 사용된 최신 데이터 날짜
+    - `prediction_date`: 예측 대상 날짜 (다음 거래일)
+    """
+    _validate_ticker(ticker)
+
+    predictor = _predictors.get(ticker)
+    if predictor is None:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{ticker} 예측 모델이 로드되지 않았습니다. 학습 후 서버를 재시작하세요.",
+        )
+
+    try:
+        result = predictor.predict()
+    except Exception as e:
+        logger.error(f"[{ticker}] 예측 실패: {e}")
+        raise HTTPException(status_code=500, detail=f"예측 중 오류가 발생했습니다: {e}")
+
+    return result
 
 
 # ── Helpers ───────────────────────────────────────────────────
