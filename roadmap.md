@@ -157,7 +157,7 @@
 ✅ feature → dev → main Git Flow
 ✅ Model A 학습 완료 (LSTM+XGBoost 스태킹, binary classification)
 ✅ Model B 학습 완료 (차트패턴 33 features + XGBoost)
-🔄 Model C 진행 중 (감성 기반 예측)
+✅ Model C 학습 완료 (감성 기반 예측, 3단계 비교 후 최고 stage 선택)
 ⏸️ 펀더멘털 수집 (Yahoo Finance 401로 보류)
 ```
 
@@ -236,7 +236,7 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 
 ---
 
-## 3단계: 감성 기반 예측모델 (Model C) 🔄 진행 중
+## 3단계: 감성 기반 예측모델 (Model C) ✅ 완료
 
 ### 데이터 현황 (2026.04 기준)
 
@@ -256,21 +256,41 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
      005930.KS: 무료 티어 완전 접근 불가 ("You don't have access to this resource.")
    - 두 종목을 동일한 방식으로 처리해야 하므로 진행 의미 없음 → 포기
 
-2단계: CNN Fear & Greed Index 단독 사용 🔄 진행 중
+2단계: CNN Fear & Greed Index 단독 사용 ✅ 완료
    - CNN 비공식 API로 2021년 초~현재 일별 데이터 수집 가능
    - 단일 지수 (0~100) + label (Extreme Fear/Fear/Neutral/Greed/Extreme Greed)
    - 주가 데이터(5년)와 기간 완전 일치 (1,322개 데이터 포인트 확인)
    - 단점: 시장 전체 지수, 종목별 특성 반영 안됨
 
-3단계: Fear & Greed + VIX 결합 (기대 효과 가장 높음)
+3단계: Fear & Greed + VIX 결합 ✅ 완료
    - VIX는 이미 5년치 DB에 존재
    - Fear & Greed + VIX = 두 개의 독립적인 감성 proxy
    - 학습 데이터 길이가 주가 데이터와 완전히 일치
 
-4단계: 현재 보유 2개월치 뉴스 감성만 사용 (최후 수단)
+4단계: 현재 보유 2개월치 뉴스 감성만 사용 ✅ 완료
    - 주가 데이터의 일부 구간(2개월)만 사용
    - 데이터 부족으로 성능 기대치 낮음
+   - → 2/3/4단계 중 up_f1 최고 stage를 자동 선택하여 모델 저장
 ```
+
+---
+
+### v1.6 - Model C (감성 기반 예측) 완료 (2026.04)
+
+**한 일**
+- sentiment_features.py: 3가지 데이터 전략(Stage 2/3/4) feature 엔지니어링 구현
+- train_c.py: 3개 stage 비교 실험 후 up_f1 기준 최고 stage 자동 선택 + 저장
+- 학습 완료: 005930.KS_c_xgb/meta, TSLA_c_xgb/meta
+
+**설계 결정**
+- Finnhub 대신 CNN Fear & Greed Index를 감성 proxy로 사용한 이유:
+  Finnhub은 TSLA 1년치만 가능, 005930.KS 접근 불가 → 두 종목 동일 처리 불가
+  Fear & Greed는 2021년~현재 5년치, 주가 데이터와 기간 완전 일치
+- Stage 3 (Fear & Greed + VIX)이 가장 기대되는 이유:
+  두 독립적인 감성 proxy 결합 + 5년 데이터 완전 일치
+  VIX는 이미 DB에 존재하므로 추가 수집 불필요
+- 단일 best stage만 저장하는 이유:
+  앙상블 단계에서 하나의 Model C 예측값만 필요하므로, 최고 성능 stage만 유지
 
 ---
 
@@ -342,8 +362,8 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 | v1.3 과거 데이터 수집 (5년치) | ✅ 완료 | 2026.03 | 2026.04 |
 | v1.4 버그 픽스 | ✅ 완료 | 2026.03 | 2026.04 |
 | v1.5 ML 모델 개선 | ✅ 완료 | 2026.04 | 2026.04 |
-| 2단계 Model A (LSTM+XGBoost) | 🔄 학습완료, 통합 대기 | 2026.03 | - |
-| 2단계 Model B (차트패턴 33 features) | 🔄 학습완료, 통합 대기 | 2026.04 | - |
-| 3단계 Model C (감성 기반) | 🔄 진행 중 | 2026.04 | - |
+| 2단계 Model A (LSTM+XGBoost) | ✅ 학습 완료 | 2026.03 | 2026.04 |
+| 2단계 Model B (차트패턴 33 features) | ✅ 학습 완료 | 2026.04 | 2026.04 |
+| 3단계 Model C (감성 기반) | ✅ 완료 | 2026.04 | 2026.04 |
 | 4단계 앙상블 메타모델 | ⬜ 대기 | - | - |
 | 5단계 AI Agent | ⬜ 대기 | - | - |
