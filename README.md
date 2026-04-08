@@ -10,7 +10,7 @@
 
 - 삼성전자 · 테슬라 주가 흐름 파악 및 투자 인사이트 확보
 - 뉴스 감정분석을 통한 주가 흐름 사전 파악
-- 기술적 지표 · 시장 지표 · 감정분석을 결합한 앙상블 예측 모델 구축 (진행 중)
+- 기술적 지표 · 시장 지표 · 감정분석을 결합한 앙상블 예측 모델 구축 (완료)
 - CI/CD 자동화 파이프라인 구축 실습
 
 ---
@@ -74,13 +74,18 @@ stockmind-mini/
 │   ├── api/
 │   │   └── main.py             # FastAPI 엔드포인트
 │   ├── ml/
-│   │   ├── features.py         # Model A feature 엔지니어링 (LSTM 시퀀스)
-│   │   ├── chart_features.py   # Model B feature 엔지니어링 (차트패턴)
-│   │   ├── lstm_model.py       # LSTM 모델 정의
-│   │   ├── xgb_model.py        # XGBoost 모델 정의
-│   │   ├── train_a.py          # Model A 학습 (LSTM+XGBoost 스태킹)
-│   │   └── train_b.py          # Model B 학습 (차트패턴 + XGBoost)
-│   ├── main.py                 # 파이프라인 오케스트레이터
+│   │   ├── features.py           # Model A feature 엔지니어링 (LSTM 시퀀스)
+│   │   ├── chart_features.py     # Model B feature 엔지니어링 (차트패턴)
+│   │   ├── sentiment_features.py # Model C feature 엔지니어링 (Fear&Greed/VIX/뉴스)
+│   │   ├── lstm_model.py         # LSTM 모델 정의
+│   │   ├── xgb_model.py          # XGBoost 모델 정의
+│   │   ├── train_a.py            # Model A 학습 (LSTM+XGBoost 스태킹)
+│   │   ├── train_b.py            # Model B 학습 (차트패턴 + XGBoost)
+│   │   ├── train_c.py            # Model C 학습 (감성 3단계 비교 + 최고 stage 선택)
+│   │   ├── train_ensemble.py     # 앙상블 학습 (Model A/B/C up 확률 → Meta XGBoost)
+│   │   ├── train.py              # ML 전체 학습 오케스트레이터 (A→B→C→Ensemble)
+│   │   └── predictor.py          # 앙상블 예측 모듈 (API에서 호출)
+│   ├── main.py                   # 데이터 수집 파이프라인 오케스트레이터
 │   └── settings.py             # 환경변수 설정
 ├── tests/
 │   ├── test_collector.py       # 수집 모듈 테스트
@@ -116,8 +121,11 @@ cp .env.example .env
 # 컨테이너 실행
 docker compose up -d db api
 
-# 파이프라인 수동 실행
+# 데이터 수집 파이프라인 수동 실행
 PYTHONPATH=src python src/main.py
+
+# ML 전체 학습 (Model A → B → C → Ensemble)
+PYTHONPATH=src python src/ml/train.py
 ```
 
 ### 환경변수 (.env)
@@ -152,6 +160,7 @@ PRICE_INTERVAL=1d
 | GET | `/stocks/{ticker}/prices` | 주가 이력 조회 |
 | GET | `/stocks/{ticker}/news` | 뉴스 감정분석 이력 조회 |
 | GET | `/stocks/{ticker}/summary` | 날짜별 주가 + 감정 요약 |
+| GET | `/stocks/{ticker}/prediction` | 앙상블 모델 기반 주가 방향 예측 |
 
 Swagger UI: `http://[EC2_HOST]:8000/docs`
 
@@ -214,7 +223,7 @@ Model C (Sentiment)     ──┘
 | Model A | 20일 시계열 + KOSPI/NASDAQ/VIX | LSTM → XGBoost 스태킹 | 학습 완료 |
 | Model B | 당일 차트패턴 시그널 (33 features) | XGBoost | 학습 완료 |
 | Model C | Fear & Greed Index + VIX + 뉴스 감성 | XGBoost | 학습 완료 |
-| Ensemble | Model A/B/C 예측값 결합 | Meta XGBoost | 대기 |
+| Ensemble | Model A/B/C up 확률 결합 | Meta XGBoost | 학습 완료 |
 
 ---
 
@@ -229,12 +238,16 @@ Model C (Sentiment)     ──┘
 - [x] **3단계**: Fear & Greed + 기존 VIX 결합 → 시장 감성 복합 feature
 - [x] **4단계**: 현재 보유 2개월치 뉴스 감성 결과만으로 학습 → 3단계 중 up_f1 최고 stage 자동 선택
 
+### 완료 — 앙상블 메타모델
+
+- [x] 앙상블 메타모델 (Model A/B/C up 확률 → Meta XGBoost)
+
 ### 이후 계획
 
-- [ ] 앙상블 메타모델 (Model A + B + C 예측값 결합)
+- [x] ML 전체 학습 오케스트레이터 (`train.py`: A→B→C→Ensemble 순서 통합)
+- [x] API 엔드포인트 추가 (`/stocks/{ticker}/prediction`)
 - [ ] 임계값 튜닝 (전체 파이프라인 완성 후)
 - [ ] 백테스팅 (예측 정확도 검증)
-- [ ] API 엔드포인트 추가 (`/stocks/{ticker}/prediction`)
 - [ ] AI Agent (LangGraph, 자연어 투자 인사이트)
 
 ### 미래 아이디어 (보류)

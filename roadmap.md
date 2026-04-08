@@ -158,6 +158,9 @@
 ✅ Model A 학습 완료 (LSTM+XGBoost 스태킹, binary classification)
 ✅ Model B 학습 완료 (차트패턴 33 features + XGBoost)
 ✅ Model C 학습 완료 (감성 기반 예측, 3단계 비교 후 최고 stage 선택)
+✅ 앙상블 메타모델 학습 완료 (Model A/B/C up 확률 → Meta XGBoost)
+✅ ML 전체 학습 오케스트레이터 (train.py: A→B→C→Ensemble 순서 통합)
+✅ 예측 API 엔드포인트 (GET /stocks/{ticker}/prediction)
 ⏸️ 펀더멘털 수집 (Yahoo Finance 401로 보류)
 ```
 
@@ -231,7 +234,6 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
    - ROC: roc_5, roc_10
 
 ✅ XGBoost 모델 학습 (train_b.py)
-⬜ 예측값을 feature B로 DB 저장
 ```
 
 ---
@@ -294,7 +296,7 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 
 ---
 
-## 4단계: 앙상블 메타모델 (최종 예측)
+## 4단계: 앙상블 메타모델 (최종 예측) ✅ 완료
 
 ```
 설계 방향:
@@ -308,13 +310,31 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 → 여러 모델 신호를 종합하는 앙상블이 더 신뢰도 높음
 → "맞다/틀리다"가 아닌 "확률적으로 더 나은 판단을 돕는 도구"로 설계
 
-⬜ feature A (Model A up 확률) +
+✅ feature A (Model A up 확률) +
    feature B (Model B up 확률) +
    feature C (Model C up 확률) 결합
-⬜ Meta XGBoost 학습
+✅ Meta XGBoost 학습 (train_ensemble.py)
+✅ ML 전체 학습 오케스트레이터 (train.py: A→B→C→Ensemble)
+✅ 예측 API 엔드포인트 (GET /stocks/{ticker}/prediction, predictor.py)
 ⬜ 임계값 튜닝 (앙상블 완성 후 전체 기준으로 튜닝)
 ⬜ 백테스팅
 ```
+
+### v1.7 - ML 통합 오케스트레이터 + 예측 API (2026.04)
+
+**한 일**
+- train_ensemble.py: Model A/B/C up 확률을 feature로 삼는 Meta XGBoost 학습
+- train.py: Model A→B→C→Ensemble을 순서대로 실행하는 단일 진입점
+- predictor.py: EnsemblePredictor 클래스 — 모델 최초 1회 로드 후 캐싱, predict() 메서드
+- api/main.py: `GET /stocks/{ticker}/prediction` 엔드포인트 추가
+
+**설계 결정**
+- train.py를 별도 파일로 분리한 이유:
+  데이터 수집(main.py, 매일 cron)과 ML 학습(train.py, 수동 실행)은 실행 주기가 다름
+  → 두 역할을 하나의 파일에 합치지 않고 명확히 분리
+- EnsemblePredictor를 서버 시작 시 로드하는 이유:
+  LSTM + 4개 XGBoost 모델을 매 요청마다 로드하면 응답 지연 발생
+  → lifespan에서 1회 로드 후 메모리 캐싱으로 빠른 응답 보장
 
 ---
 
@@ -365,5 +385,6 @@ ECG 데이터: 심장 박동이라는 명확한 반복 패턴 존재 → CNN 효
 | 2단계 Model A (LSTM+XGBoost) | ✅ 학습 완료 | 2026.03 | 2026.04 |
 | 2단계 Model B (차트패턴 33 features) | ✅ 학습 완료 | 2026.04 | 2026.04 |
 | 3단계 Model C (감성 기반) | ✅ 완료 | 2026.04 | 2026.04 |
-| 4단계 앙상블 메타모델 | ⬜ 대기 | - | - |
+| 4단계 앙상블 메타모델 | ✅ 완료 | 2026.04 | 2026.04 |
+| v1.7 ML 통합 + 예측 API | ✅ 완료 | 2026.04 | 2026.04 |
 | 5단계 AI Agent | ⬜ 대기 | - | - |
