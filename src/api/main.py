@@ -6,10 +6,11 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, and_
 
-from db.writer import init_db, get_session
+from db.writer import init_db, get_session, insert_prediction_log
 from db.models import StockPrice, NewsArticle
 from settings import TICKERS
 from ml.predictor import EnsemblePredictor
+from ml.backtest import run_backtest
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,31 @@ class PredictionResponse(BaseModel):
     based_on_date: str
     direction: str
     up_probability: float
+    threshold_used: float
     model_probabilities: ModelProbabilities
+
+
+class BacktestDailyResult(BaseModel):
+    date: str
+    direction: str
+    actual: str
+    up_probability: float
+    is_correct: bool
+
+
+class BacktestResponse(BaseModel):
+    ticker: str
+    start_date: str
+    end_date: str
+    threshold: float
+    n_total: int
+    n_traded: int
+    accuracy: Optional[float]
+    traded_accuracy: Optional[float]
+    up_precision: Optional[float]
+    up_recall: Optional[float]
+    up_f1: Optional[float]
+    daily_results: list[BacktestDailyResult]
 
 
 # ── Endpoints ─────────────────────────────────────────────────
@@ -251,6 +276,56 @@ def get_prediction(ticker: str):
     except Exception as e:
         logger.error(f"[{ticker}] 예측 실패: {e}")
         raise HTTPException(status_code=500, detail=f"예측 중 오류가 발생했습니다: {e}")
+
+    try:
+        insert_prediction_log(result)
+    except Exception as e:
+        logger.warning(f"[{ticker}] 예측 로그 저장 실패 (예측 결과는 정상): {e}")
+
+    return result
+
+
+@app.get(
+    "/stocks/{ticker}/backtest",
+    response_model=BacktestResponse,
+    summary="백테스팅",
+)
+def get_backtest(
+    ticker: str,
+    start: str = Query(description="시작 날짜 (YYYY-MM-DD)"),
+    end: str = Query(description="종료 날짜 (YYYY-MM-DD)"),
+    threshold: float = Query(default=0.5, ge=0.5, le=1.0, description="신호 임계값 (0.5 ~ 1.0)"),
+):
+    """
+    학습된 앙상블 모델로 start ~ end 구간을 백테스팅.
+
+    - `accuracy`: 전체 정확도
+    - `traded_accuracy`: threshold 조건 충족 날만의 정확도
+    - `n_traded`: threshold 신호 발생 날 수
+    - `daily_results`: 날짜별 예측 / 실제 방향 상세
+
+    주의: 모델 학습 구간을 포함하는 날짜 범위는 in-sample 결과이므로
+    실제 성능보다 과대평가될 수 있습니다.
+    """
+    _validate_ticker(ticker)
+
+    try:
+        from datetime import date
+        start_date = date.fromisoformat(start)
+        end_date   = date.fromisoformat(end)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="날짜 형식이 올바르지 않습니다. YYYY-MM-DD 사용.")
+
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="start가 end보다 늦을 수 없습니다.")
+
+    try:
+        result = run_backtest(ticker, start_date, end_date, threshold)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=f"모델 파일 없음: {e}")
+    except Exception as e:
+        logger.error(f"[{ticker}] 백테스팅 실패: {e}")
+        raise HTTPException(status_code=500, detail=f"백테스팅 중 오류: {e}")
 
     return result
 

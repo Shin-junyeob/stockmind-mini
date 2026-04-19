@@ -3,11 +3,11 @@ from contextlib import contextmanager
 from datetime import date
 from typing import Generator
 
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, select, text, and_, update
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from db.models import Base, StockPrice, NewsArticle, MarketIndicator, Fundamental, FearGreed
+from db.models import Base, StockPrice, NewsArticle, MarketIndicator, Fundamental, FearGreed, PredictionLog
 from settings import DATABASE_URL
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,7 @@ def init_db() -> None:
         "ALTER TABLE stock_prices ADD COLUMN IF NOT EXISTS low  FLOAT",
         "ALTER TABLE news_articles ADD COLUMN IF NOT EXISTS sentiment_reason TEXT",
         "CREATE TABLE IF NOT EXISTS fear_greed (id SERIAL PRIMARY KEY, date DATE NOT NULL UNIQUE, score FLOAT NOT NULL, rating VARCHAR(20) NOT NULL, created_at TIMESTAMP DEFAULT NOW())",
+        "ALTER TABLE stock_prices ALTER COLUMN volume TYPE BIGINT",
     ]
 
     with engine.connect() as conn:
@@ -264,6 +265,68 @@ def upsert_market_indicators(market_data: list[dict]) -> int:
 
     logger.info(f"[writer] 시장 지표 upsert 완료: {len(rows)}건")
     return len(rows)
+
+
+# ── PredictionLog ─────────────────────────────────────────────
+
+def insert_prediction_log(result: dict) -> None:
+    """
+    앙상블 예측 결과를 prediction_logs 테이블에 저장.
+    동일 (ticker, prediction_date)가 이미 있으면 무시.
+    """
+    row = {
+        "ticker":          result["ticker"],
+        "prediction_date": date.fromisoformat(result["prediction_date"]),
+        "based_on_date":   date.fromisoformat(result["based_on_date"]),
+        "direction":       result["direction"],
+        "up_probability":  result["up_probability"],
+        "proba_a":         result["model_probabilities"]["model_a"],
+        "proba_b":         result["model_probabilities"]["model_b"],
+        "proba_c":         result["model_probabilities"]["model_c"],
+        "threshold_used":  result.get("threshold_used"),
+    }
+    with get_session() as session:
+        stmt = pg_insert(PredictionLog).values([row])
+        stmt = stmt.on_conflict_do_nothing(index_elements=["ticker", "prediction_date"])
+        session.execute(stmt)
+
+    logger.info(
+        f"[writer] 예측 로그 저장: {result['ticker']} "
+        f"{result['prediction_date']} → {result['direction']} "
+        f"(up_prob={result['up_probability']})"
+    )
+
+
+def update_prediction_actuals(ticker: str, prediction_date: date, actual_direction: str) -> int:
+    """
+    예측 대상 날짜의 실제 방향을 채우고 is_correct 를 업데이트.
+    actual_direction 이 아직 없는 행만 업데이트.
+    반환값: 업데이트된 행 수
+    """
+    with get_session() as session:
+        stmt = (
+            update(PredictionLog)
+            .where(
+                and_(
+                    PredictionLog.ticker == ticker,
+                    PredictionLog.prediction_date == prediction_date,
+                    PredictionLog.actual_direction.is_(None),
+                )
+            )
+            .values(
+                actual_direction=actual_direction,
+                is_correct=(PredictionLog.direction == actual_direction),
+            )
+        )
+        result = session.execute(stmt)
+        updated = result.rowcount
+
+    if updated:
+        logger.info(
+            f"[writer] 예측 정답 업데이트: {ticker} {prediction_date} "
+            f"actual={actual_direction} ({updated}건)"
+        )
+    return updated
 
 
 # ── Fundamental ───────────────────────────────────────────────

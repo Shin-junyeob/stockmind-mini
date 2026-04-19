@@ -204,23 +204,42 @@ def train_ensemble(ticker: str) -> dict:
         logger.error(f"[{ticker}] 공통 데이터 부족: {len(df)}행 (최소 50행 필요)")
         return {}
 
-    # ── 3. 메타 feature + label ──────────────────────────────
-    X = df[["proba_a", "proba_b", "proba_c"]].values.astype(np.float32)
-    y = df["y"].values.astype(np.int64)
+    # ── 3. 앙상블 leakage 방지: Model A 훈련 구간 제외 ───────
+    # Model A는 시계열 기준 앞 60% 구간으로 학습됨.
+    # 해당 구간의 예측은 in-sample이므로 과적합 패턴을 포함함.
+    # → 뒤 40% 구간(out-of-sample 예측)만 Meta XGBoost 학습에 사용.
+    # NOTE: OOF stacking(5-fold time-series CV)이 학문적으로 더 정확하나
+    #       학습 시간이 5배 증가하므로 현재는 cutoff 방식 적용.
+    overlap_cutoff = int(len(df) * 0.6)
+    df_clean = df.iloc[overlap_cutoff:].reset_index(drop=True)
+
+    logger.info(
+        f"[{ticker}] leakage 방지 cutoff 적용: "
+        f"전체 {len(df)}행 → {len(df_clean)}행 "
+        f"({df_clean['date'].min().date()} ~ {df_clean['date'].max().date()})"
+    )
+
+    if len(df_clean) < 30:
+        logger.error(f"[{ticker}] cutoff 후 데이터 부족: {len(df_clean)}행 (최소 30행 필요)")
+        return {}
+
+    # ── 4. 메타 feature + label ──────────────────────────────
+    X = df_clean[["proba_a", "proba_b", "proba_c"]].values.astype(np.float32)
+    y = df_clean["y"].values.astype(np.int64)
 
     logger.info(f"[{ticker}] 클래스 분포: down={sum(y==0)} up={sum(y==1)}")
 
-    # ── 4. 시계열 순서 유지 80/20 split ─────────────────────
+    # ── 5. 시계열 순서 유지 80/20 split ─────────────────────
     split = int(len(X) * 0.8)
     X_train, X_test = X[:split], X[split:]
     y_train, y_test = y[:split], y[split:]
 
     logger.info(f"[{ticker}] train={len(X_train)} test={len(X_test)}")
 
-    # ── 5. Meta XGBoost 학습 ─────────────────────────────────
+    # ── 6. Meta XGBoost 학습 ─────────────────────────────────
     ensemble_model = train_xgb(X_train, y_train)
 
-    # ── 6. 성능 평가 ─────────────────────────────────────────
+    # ── 7. 성능 평가 ─────────────────────────────────────────
     preds, _ = predict_xgb(ensemble_model, X_test)
 
     up_precision = precision_score(y_test, preds, pos_label=1, zero_division=0)
@@ -235,7 +254,7 @@ def train_ensemble(ticker: str) -> dict:
     logger.info(f"[{ticker}] 앙상블 up Precision: {up_precision:.4f} | up F1: {up_f1:.4f}")
     logger.info(f"[{ticker}] 분류 리포트:\n{report}")
 
-    # ── 7. 모델 저장 ──────────────────────────────────────────
+    # ── 8. 모델 저장 ──────────────────────────────────────────
     os.makedirs(MODEL_DIR, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d")
 

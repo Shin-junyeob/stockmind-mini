@@ -77,20 +77,29 @@ def fetch_price(ticker: str, period: str = PRICE_PERIOD, interval: str = PRICE_I
 
     results = []
     valid_idx = 0  # None 제외한 인덱스 추적
+    prev_close: float | None = None  # 전일 종가 (오버나이트 갭 포함 수익률 계산용)
 
     for ts, o, h, l, c, v in zip(timestamps, opens, highs, lows, closes, volumes):
         if o is None or h is None or l is None or c is None:
             continue
         try:
-            date_str         = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
-            open_price       = round(float(o), 4)
-            high_price       = round(float(h), 4)
-            low_price        = round(float(l), 4)
-            close_price      = round(float(c), 4)
-            volume           = int(v) if v else 0
-            price_change     = round(close_price - open_price, 4)
-            price_change_pct = round((price_change / open_price) * 100, 4) if open_price else 0.0
-            direction        = "up" if price_change > 0 else "down"
+            date_str    = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d")
+            open_price  = round(float(o), 4)
+            high_price  = round(float(h), 4)
+            low_price   = round(float(l), 4)
+            close_price = round(float(c), 4)
+            volume      = int(v) if v else 0
+
+            # 전일 종가 기준 수익률 (오버나이트 갭 포함)
+            # 첫 번째 행은 prev_close 없으므로 flat 처리
+            if prev_close is not None and prev_close != 0:
+                price_change     = round(close_price - prev_close, 4)
+                price_change_pct = round((price_change / prev_close) * 100, 4)
+            else:
+                price_change     = 0.0
+                price_change_pct = 0.0
+            direction = "up" if price_change > 0 else ("flat" if price_change == 0 else "down")
+            prev_close = close_price
 
             # 기술적 지표 (값 없으면 None)
             ma5  = round(float(ma5_series.iloc[valid_idx]), 4)  if valid_idx < len(ma5_series)  and not pd.isna(ma5_series.iloc[valid_idx])  else None
