@@ -1,0 +1,56 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python src/main.py*)",
+      "Bash(python src/ml/train.py*)",
+      "Bash(python src/ml/backtest.py*)",
+      "Bash(pytest tests/*)",
+      "Bash(docker compose up*)",
+      "Bash(docker compose down*)",
+      "Bash(docker compose logs*)"
+    ],
+    "deny": [
+      "Bash(* DROP TABLE*)",
+      "Bash(* DROP DATABASE*)",
+      "Bash(rm -rf models/*)",
+      "Bash(rm -rf .claude/*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/bash_guard.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hook_models_migration.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash scripts/hook_stop_pytest.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

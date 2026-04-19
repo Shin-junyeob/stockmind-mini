@@ -20,6 +20,7 @@ from ml.chart_features import load_data as load_data_b, build_chart_dataset
 from ml.sentiment_features import build_stage2_dataset, build_stage3_dataset, build_stage4_dataset
 from ml.lstm_model import LSTMClassifier, predict_proba_lstm
 from ml.xgb_model import build_xgb_features, predict_xgb
+from ml.tune_threshold import load_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +55,10 @@ class EnsemblePredictor:
     """
 
     def __init__(self, ticker: str):
-        self.ticker = ticker
+        self.ticker    = ticker
+        self.threshold = load_threshold(ticker)
         self._load_models()
+        logger.info(f"[{self.ticker}] 적용 threshold={self.threshold}")
 
     def _load_models(self):
         logger.info(f"[{self.ticker}] 모델 로드 시작")
@@ -176,7 +179,7 @@ class EnsemblePredictor:
         preds, proba_ens = predict_xgb(self.xgb_ensemble, X_meta)
 
         up_prob   = float(proba_ens[0, 1]) if proba_ens.shape[1] >= 2 else float(proba_ens[0, 0])
-        direction = "up" if int(preds[0]) == 1 else "down"
+        direction = "up" if up_prob >= self.threshold else "down"
 
         # 예측 대상 날짜: based_on_date의 다음 거래일 (단순히 +1일로 표시)
         import pandas as pd
@@ -195,6 +198,7 @@ class EnsemblePredictor:
             "based_on_date":    str(pd.Timestamp(based_on_date).date()),
             "direction":        direction,
             "up_probability":   round(up_prob, 4),
+            "threshold_used":   self.threshold,
             "model_probabilities": {
                 "model_a": round(proba_a, 4),
                 "model_b": round(proba_b, 4),

@@ -1,5 +1,6 @@
 import logging
 import sys
+from datetime import date
 
 from settings import TICKERS, YF_MAX_SCROLL, YF_MAX_ARTICLES
 from collector.price_fetcher import (
@@ -15,6 +16,7 @@ from db.writer import (
     upsert_market_indicators,
     insert_articles,
     get_existing_urls,
+    update_prediction_actuals,
 )
 
 logging.basicConfig(
@@ -57,6 +59,14 @@ def run_pipeline(tickers: list[str] = TICKERS) -> None:
         price_data = fetch_price(ticker)
         if price_data:
             upsert_stock_prices(price_data)
+
+            # 오늘 수집된 주가로 전날 예측의 정답 업데이트
+            latest = max(price_data, key=lambda d: d["date"])
+            update_prediction_actuals(
+                ticker=ticker,
+                prediction_date=date.fromisoformat(latest["date"]),
+                actual_direction=latest["direction"],
+            )
         else:
             logger.warning(f"[{ticker}] 주가 데이터 없음, 스킵")
 
