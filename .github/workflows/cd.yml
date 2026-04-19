@@ -158,3 +158,22 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONPATH: src
         run: python src/ml/tune_threshold.py
+
+  # ── 예측 호출 (pipeline 완료 후) ─────────────────────────
+  predict:
+    runs-on: ubuntu-latest
+    needs: pipeline
+
+    steps:
+      - name: Call prediction API on EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            for TICKER in "005930.KS" "TSLA"; do
+              echo "=== [$TICKER] 예측 호출 ==="
+              curl -sf "http://localhost:8000/stocks/$TICKER/prediction" | python3 -m json.tool || \
+                echo "[$TICKER] 예측 실패 (모델 미존재 또는 API 오류)"
+            done
