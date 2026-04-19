@@ -141,10 +141,11 @@ jobs:
           PRICE_INTERVAL: "1d"
         run: python src/main.py
 
-  # ── 재학습 (pipeline 완료 후, EC2에서 실행) ──────────────
+  # ── 재학습 (pipeline + deploy 완료 후, EC2에서 실행) ─────
   retrain:
     runs-on: ubuntu-latest
-    needs: pipeline
+    needs: [pipeline, deploy]
+    if: always() && needs.pipeline.result == 'success'
 
     steps:
       - name: Retrain on EC2 via SSH
