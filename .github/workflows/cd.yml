@@ -6,6 +6,17 @@ on:
   schedule:
     # 매일 오전 9시 (KST) = UTC 00:00
     - cron: '0 0 * * *'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: '실행할 작업 선택'
+        required: true
+        default: 'backfill'
+        type: choice
+        options:
+          - backfill
+          - train
+          - backfill-and-train
 
 jobs:
   # ── 배포 (main 머지 시에만) ────────────────────────────────
@@ -55,6 +66,39 @@ jobs:
             docker pull $(grep 'image:' docker-compose.yml | head -1 | awk '{print $2}') || true
             docker compose up -d db api
             echo "✅ 배포 완료"
+
+  # ── 수동 작업 (workflow_dispatch) ────────────────────────
+  manual:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Run on EC2 via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 60m
+          script: |
+            cd ~/stockmind-mini
+            git pull origin main
+
+            JOB="${{ github.event.inputs.job }}"
+
+            if [ "$JOB" = "backfill" ] || [ "$JOB" = "backfill-and-train" ]; then
+              echo "=== backfill 시작 ==="
+              docker compose exec -T api python scripts/backfill.py
+              echo "=== backfill 완료 ==="
+            fi
+
+            if [ "$JOB" = "train" ] || [ "$JOB" = "backfill-and-train" ]; then
+              echo "=== 모델 학습 시작 ==="
+              docker compose exec -T api python src/ml/train.py
+              echo "=== 임계값 튜닝 시작 ==="
+              docker compose exec -T api python src/ml/tune_threshold.py
+              echo "=== 학습 완료 ==="
+            fi
 
   # ── 파이프라인 (매일 cron + main 머지 시) ─────────────────
   pipeline:
