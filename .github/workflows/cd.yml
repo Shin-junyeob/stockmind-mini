@@ -63,8 +63,9 @@ jobs:
 
             cd ~/stockmind-mini
             git pull origin main
-            docker pull $(grep 'image:' docker-compose.yml | head -1 | awk '{print $2}') || true
-            docker compose up -d db api
+            docker compose pull api
+            docker compose up -d --force-recreate api
+            docker compose up -d db
             echo "✅ 배포 완료"
 
   # ── 수동 작업 (workflow_dispatch) ────────────────────────
