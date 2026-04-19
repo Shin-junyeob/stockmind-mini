@@ -1,42 +1,27 @@
-# 📈 Stockmind Mini
+# Stockmind Mini
 
-삼성전자(005930.KS)와 테슬라(TSLA)의 주가 데이터 및 뉴스 감정분석을 매일 자동 수집하고 API로 제공하는 경량 데이터 파이프라인.
-
-> 단순한 데이터 수집을 넘어, 주가 예측 모델과 AI Agent로 발전시키는 것을 목표로 진행 중인 프로젝트입니다.
+삼성전자(005930.KS)와 테슬라(TSLA)의 주가를 매일 자동 수집하고, 앙상블 ML 모델로 다음 날 방향(상승/하락)을 예측하는 경량 파이프라인.
 
 ---
 
-## 프로젝트 목적
+## 무엇을 하는 프로젝트인가
 
-- 삼성전자 · 테슬라 주가 흐름 파악 및 투자 인사이트 확보
-- 뉴스 감정분석을 통한 주가 흐름 사전 파악
-- 기술적 지표 · 시장 지표 · 감정분석을 결합한 앙상블 예측 모델 구축 (완료)
-- CI/CD 자동화 파이프라인 구축 실습
+매일 아침 GitHub Actions가 자동으로 실행되어:
 
----
+1. 주가 + 기술적 지표(MA, RSI)를 수집한다
+2. 시장 지표(KOSPI, NASDAQ, VIX)를 수집한다
+3. 뉴스를 크롤링하고 GPT-4o-mini로 감정을 분석한다
+4. 수집된 데이터를 PostgreSQL DB에 저장한다
 
-## 현재 아키텍처
+저장된 데이터를 기반으로 세 가지 모델이 독립적으로 예측하고, 앙상블 메타모델이 최종 방향을 결정한다.
 
 ```
-GitHub Actions (매일 KST 09:00 cron)
-    ↓
-Actions Runner (RAM 7GB, 무료)
-├── 주가 수집         (Yahoo Finance API 직접 호출)
-├── 기술적 지표 계산  (MA5, MA20, MA60, RSI)
-├── 시장 지표 수집    (KOSPI, KOSDAQ, 나스닥, VIX)
-├── 뉴스 링크 수집    (Selenium + Chromium)
-├── 기사 본문 수집    (HTTP + Selenium fallback)
-├── 감정 분석         (GPT-4o-mini)
-└── EC2 DB 직접 저장  (PostgreSQL)
-
-EC2 (24시간 상주)
-├── PostgreSQL  (데이터 저장)
-└── FastAPI     (API 서버)
+Model A (LSTM + XGBoost)  ─┐
+Model B (차트패턴 XGBoost)  ├──► Ensemble Meta XGBoost ──► up / down
+Model C (감성 XGBoost)    ─┘
 ```
 
-### 아키텍처 결정 이유
-
-초기 설계에서는 EC2 내부에서 Selenium 크롤링을 실행했으나, t2.micro (RAM 1GB) 환경에서 Chrome이 메모리 부족으로 타임아웃이 발생했다. 이를 해결하기 위해 크롤링과 감정분석을 **GitHub Actions runner (RAM 7GB, 무료)** 에서 실행하고, 결과만 EC2 DB에 저장하는 구조로 변경했다. EC2는 DB와 API 서버만 담당하여 안정적으로 운영된다.
+예측 결과는 REST API로 제공되며, 예측 정확도는 prediction_logs 테이블에 자동으로 기록된다.
 
 ---
 
@@ -45,8 +30,8 @@ EC2 (24시간 상주)
 | 분류 | 기술 |
 |------|------|
 | Language | Python 3.10 |
+| ML | PyTorch (LSTM), XGBoost, scikit-learn |
 | Web Framework | FastAPI |
-| ORM | SQLAlchemy |
 | Database | PostgreSQL 16 |
 | Crawling | Selenium, Requests |
 | NLP | GPT-4o-mini (OpenAI API) |
@@ -56,76 +41,51 @@ EC2 (24시간 상주)
 
 ---
 
-## 프로젝트 구조
+## 아키텍처
 
 ```
-stockmind-mini/
-├── src/
-│   ├── collector/
-│   │   ├── price_fetcher.py    # 주가 + 기술적 지표 + 시장 지표 수집
-│   │   ├── yahoo_scraper.py    # 뉴스 링크 수집 (Selenium + CHROME_BIN 지원)
-│   │   ├── article_fetcher.py  # 기사 본문 수집
-│   │   └── http_utils.py       # HTTP 유틸리티
-│   ├── analyzer/
-│   │   └── sentiment.py        # GPT-4o-mini 감정 분석
-│   ├── db/
-│   │   ├── models.py           # DB 테이블 정의
-│   │   └── writer.py           # DB 저장 (upsert, 중복방지)
-│   ├── api/
-│   │   └── main.py             # FastAPI 엔드포인트
-│   ├── ml/
-│   │   ├── features.py           # Model A feature 엔지니어링 (LSTM 시퀀스)
-│   │   ├── chart_features.py     # Model B feature 엔지니어링 (차트패턴)
-│   │   ├── sentiment_features.py # Model C feature 엔지니어링 (Fear&Greed/VIX/뉴스)
-│   │   ├── lstm_model.py         # LSTM 모델 정의
-│   │   ├── xgb_model.py          # XGBoost 모델 정의
-│   │   ├── train_a.py            # Model A 학습 (LSTM+XGBoost 스태킹)
-│   │   ├── train_b.py            # Model B 학습 (차트패턴 + XGBoost)
-│   │   ├── train_c.py            # Model C 학습 (감성 3단계 비교 + 최고 stage 선택)
-│   │   ├── train_ensemble.py     # 앙상블 학습 (Model A/B/C up 확률 → Meta XGBoost)
-│   │   ├── train.py              # ML 전체 학습 오케스트레이터 (A→B→C→Ensemble)
-│   │   └── predictor.py          # 앙상블 예측 모듈 (API에서 호출)
-│   ├── main.py                   # 데이터 수집 파이프라인 오케스트레이터
-│   └── settings.py             # 환경변수 설정
-├── tests/
-│   ├── test_collector.py       # 수집 모듈 테스트
-│   ├── test_analyzer.py        # 감정분석 테스트 (mock)
-│   └── test_db.py              # DB 테스트 (mock)
-├── .github/
-│   └── workflows/
-│       ├── ci.yml              # PR 시 자동 테스트
-│       └── cd.yml              # main 머지 시 자동 배포 + 매일 cron 수집
-├── Dockerfile
-├── docker-compose.yml
-└── requirements.txt
+GitHub Actions (매일 KST 09:00)
+    ├── 주가 / 시장 지표 수집
+    ├── 뉴스 크롤링 + GPT 감정분석
+    └── EC2 PostgreSQL에 저장
+
+EC2 (24시간)
+    ├── PostgreSQL  — 수집 데이터 + 예측 로그
+    └── FastAPI     — 예측 API 서버
 ```
+
+> EC2 t2.micro(RAM 1GB)에서 Selenium을 실행하면 OOM이 발생한다.
+> 크롤링과 감정분석은 RAM 7GB인 Actions runner에서 실행하고, 결과만 EC2 DB에 저장하는 구조를 택했다.
 
 ---
 
-## 설치 및 실행
+## 로컬 실행
 
 ### 사전 요구사항
+
 - Docker Desktop
 - Python 3.10+
 
-### 로컬 실행
+### 실행
 
 ```bash
-# 레포 클론
 git clone https://github.com/Shin-junyeob/stockmind-mini.git
 cd stockmind-mini
 
 # 환경변수 설정
-cp .env.example .env
+cp .env.example .env  # DATABASE_URL, OPENAI_API_KEY 입력
 
-# 컨테이너 실행
+# DB + API 서버 실행
 docker compose up -d db api
 
-# 데이터 수집 파이프라인 수동 실행
+# 데이터 수집 (수동 실행)
 PYTHONPATH=src python src/main.py
 
-# ML 전체 학습 (Model A → B → C → Ensemble)
+# ML 학습 (Model A → B → C → Ensemble 순서)
 PYTHONPATH=src python src/ml/train.py
+
+# 임계값 튜닝 (학습 완료 후)
+PYTHONPATH=src python src/ml/tune_threshold.py
 ```
 
 ### 환경변수 (.env)
@@ -133,128 +93,27 @@ PYTHONPATH=src python src/ml/train.py
 ```
 DATABASE_URL=postgresql://stockmind:stockmind@db:5432/stockmind
 OPENAI_API_KEY=sk-...
-YF_MAX_SCROLL=10
-YF_MAX_ARTICLES=30
-PRICE_PERIOD=5d
-PRICE_INTERVAL=1d
 ```
 
 ---
 
-## DB 테이블 구조
-
-| 테이블 | 설명 |
-|--------|------|
-| stock_prices | 일별 주가 + High/Low + MA5/MA20/MA60/RSI |
-| news_articles | 뉴스 기사 + GPT 감정분석 결과 |
-| market_indicators | KOSPI, KOSDAQ, 나스닥, VIX |
-| fundamentals | 시가총액, PER, PBR (수집 보류) |
-
----
-
-## API 엔드포인트
-
-| Method | Endpoint | 설명 |
-|--------|----------|------|
-| GET | `/health` | 서버 상태 확인 |
-| GET | `/stocks/{ticker}/prices` | 주가 이력 조회 |
-| GET | `/stocks/{ticker}/news` | 뉴스 감정분석 이력 조회 |
-| GET | `/stocks/{ticker}/summary` | 날짜별 주가 + 감정 요약 |
-| GET | `/stocks/{ticker}/prediction` | 앙상블 모델 기반 주가 방향 예측 |
+## API
 
 Swagger UI: `http://[EC2_HOST]:8000/docs`
 
----
-
-## CI/CD 파이프라인
-
-### CI (ci.yml)
-- **트리거**: PR 생성 시 (dev, main 대상)
-- **동작**: pytest 자동 실행
-- **효과**: 테스트 실패 시 머지 불가
-
-### CD (cd.yml)
-두 개의 독립적인 job으로 구성.
-
-**deploy job** (main 머지 시에만 실행)
-1. Docker 이미지 빌드 → AWS ECR 푸시
-2. EC2에 SSH 접속 → 최신 이미지 배포
-
-**pipeline job** (main 머지 시 + 매일 KST 09:00 cron)
-1. Actions runner에서 주가 · 뉴스 수집
-2. GPT-4o-mini 감정분석
-3. EC2 PostgreSQL DB에 직접 저장
-
-### Git Flow
-```
-feature/* → dev → main
-    ↓          ↓      ↓
-  개발       CI    CI + CD
-```
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| GET | `/health` | 서버 상태 |
+| GET | `/stocks/{ticker}/prices` | 주가 이력 |
+| GET | `/stocks/{ticker}/news` | 뉴스 감정분석 이력 |
+| GET | `/stocks/{ticker}/summary` | 날짜별 주가 + 감정 요약 |
+| GET | `/stocks/{ticker}/prediction` | 앙상블 예측 (up/down + 확률) |
+| GET | `/stocks/{ticker}/backtest` | 기간 백테스팅 (`?start=YYYY-MM-DD&end=YYYY-MM-DD&threshold=0.55`) |
 
 ---
 
-## 트러블슈팅 기록
+## 테스트
 
-| 문제 | 원인 | 해결 |
-|------|------|------|
-| EC2 Selenium 타임아웃 | t2.micro RAM 부족 (1GB) | Actions runner로 크롤링 이전 |
-| yfinance Docker 오류 | yfinance 내부 파싱 이슈 | requests로 Yahoo Finance API 직접 호출 |
-| EC2 패키지 설치 타임아웃 | 아웃바운드 보안그룹 미설정 | 아웃바운드 All traffic 허용 |
-| Chrome 바이너리 없음 | Actions runner Chrome 경로 상이 | CHROME_BIN 환경변수로 경로 지정 |
-| CI DB 컬럼 없음 | init_db가 ALTER TABLE 미실행 | init_db에 마이그레이션 로직 추가 |
-| 펀더멘털 수집 401 에러 | Yahoo Finance API 정책 변경 | 펀더멘털 수집 보류, 추후 yfinance로 대체 예정 |
-| Docker healthcheck 실패 | 컨테이너에 curl 미설치 | Dockerfile에 curl 추가 |
-| 시장 지표/주가 upsert 오류 | 배치 내 중복 데이터로 PostgreSQL 유니크 제약 위반 | upsert 전 pandas 중복 제거 로직 추가 |
-| Dockerfile 빌드 오류 | 멀티스테이지 블록 중복 작성 | 중복 블록 제거 |
-
----
-
-## 예측 모델 구조
-
+```bash
+pytest tests/ -v
 ```
-Model A (LSTM+XGBoost)  ──┐
-Model B (Chart XGBoost) ──┼──► Ensemble Meta-model ──► 최종 예측 (up/down)
-Model C (Sentiment)     ──┘
-```
-
-| 모델 | 입력 신호 | 구조 | 상태 |
-|------|----------|------|------|
-| Model A | 20일 시계열 + KOSPI/NASDAQ/VIX | LSTM → XGBoost 스태킹 | 학습 완료 |
-| Model B | 당일 차트패턴 시그널 (33 features) | XGBoost | 학습 완료 |
-| Model C | Fear & Greed Index + VIX + 뉴스 감성 | XGBoost | 학습 완료 |
-| Ensemble | Model A/B/C up 확률 결합 | Meta XGBoost | 학습 완료 |
-
----
-
-## 향후 개발 계획
-
-### 완료 — Model C (감성 기반 예측)
-
-데이터 확보 한계로 인해 아래 4단계 순서로 접근:
-
-- [x] **1단계**: Finnhub 무료 API 테스트 → 포기 (TSLA 1년치만 가능, 005930.KS 접근 불가)
-- [x] **2단계**: CNN Fear & Greed Index 수집 (2021년~현재) → 감성 proxy로 단독 사용
-- [x] **3단계**: Fear & Greed + 기존 VIX 결합 → 시장 감성 복합 feature
-- [x] **4단계**: 현재 보유 2개월치 뉴스 감성 결과만으로 학습 → 3단계 중 up_f1 최고 stage 자동 선택
-
-### 완료 — 앙상블 메타모델
-
-- [x] 앙상블 메타모델 (Model A/B/C up 확률 → Meta XGBoost)
-
-### 이후 계획
-
-- [x] ML 전체 학습 오케스트레이터 (`train.py`: A→B→C→Ensemble 순서 통합)
-- [x] API 엔드포인트 추가 (`/stocks/{ticker}/prediction`)
-- [ ] 임계값 튜닝 (전체 파이프라인 완성 후)
-- [ ] 백테스팅 (예측 정확도 검증)
-- [ ] AI Agent (LangGraph, 자연어 투자 인사이트)
-
-### 미래 아이디어 (보류)
-
-**크로스 컴퍼니 학습 (Cross-sectional Learning)**
-- 현재: 2개 종목 × 5년치 ≈ 2,400 샘플
-- 아이디어: 300개 종목 × 1개월치 ≈ 9,000 샘플 (다양성↑)
-- 종목별 특성보다 시장 공통 반응 패턴을 더 많이 학습할 수 있음
-- 퀀트 분야에서 "cross-sectional learning"으로 불리는 접근법
-- 데이터 수집 인프라 확장 필요 → 모델 성숙 후 시도 예정

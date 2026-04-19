@@ -1,6 +1,6 @@
 from datetime import date
 from sqlalchemy import (
-    Column, String, Float, Integer, Date, DateTime, UniqueConstraint, func
+    Column, String, Float, Integer, BigInteger, Boolean, Date, DateTime, UniqueConstraint, func
 )
 from sqlalchemy.orm import DeclarativeBase
 
@@ -23,7 +23,7 @@ class StockPrice(Base):
     high              = Column(Float, nullable=True)   # 당일 최고가
     low               = Column(Float, nullable=True)   # 당일 최저가
     close             = Column(Float, nullable=False)
-    volume            = Column(Integer, nullable=False)
+    volume            = Column(BigInteger, nullable=False)
     price_change      = Column(Float, nullable=False)
     price_change_pct  = Column(Float, nullable=False)
     direction         = Column(String(10), nullable=False)   # up / down / flat
@@ -111,6 +111,39 @@ class MarketIndicator(Base):
         return (
             f"<MarketIndicator ticker={self.ticker} date={self.date} "
             f"close={self.close} change={self.change_pct}%>"
+        )
+
+
+class PredictionLog(Base):
+    """
+    앙상블 예측 결과 로그.
+    ticker + prediction_date 조합으로 중복 방지.
+    actual_direction / is_correct 는 다음 날 수집 파이프라인에서 사후 채움.
+    """
+    __tablename__ = "prediction_logs"
+
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    ticker           = Column(String(20), nullable=False)
+    prediction_date  = Column(Date, nullable=False)          # 예측 대상 날짜 (내일)
+    based_on_date    = Column(Date, nullable=False)          # 예측에 사용한 최신 데이터 날짜
+    direction        = Column(String(10), nullable=False)    # up / down
+    up_probability   = Column(Float, nullable=False)
+    proba_a          = Column(Float, nullable=True)
+    proba_b          = Column(Float, nullable=True)
+    proba_c          = Column(Float, nullable=True)
+    threshold_used   = Column(Float, nullable=True)
+    actual_direction = Column(String(10), nullable=True)     # 사후 채움
+    is_correct       = Column(Boolean, nullable=True)        # 사후 채움
+    created_at       = Column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("ticker", "prediction_date", name="uq_prediction_log_ticker_date"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<PredictionLog ticker={self.ticker} prediction_date={self.prediction_date} "
+            f"direction={self.direction} up_prob={self.up_probability}>"
         )
 
 
