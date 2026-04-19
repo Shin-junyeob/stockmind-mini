@@ -12,14 +12,20 @@
 | 항목 | 설명 | 상태 |
 |------|------|------|
 | Phase 2-1 | ML 재학습 자동화 — `cd.yml` retrain job + `src/ml/eval_compare.py` (up_f1 +2% 이상일 때만 교체) | ✅ |
-| Phase 2-2 | 모델 성능 모니터링 API — `GET /models/status` (prediction_logs 최근 30일 accuracy 집계) | ⬜ |
+| Phase 2-2 | 모델 성능 모니터링 API — `GET /models/status` (prediction_logs 최근 30일 accuracy 집계) | ⏳ 2026-05-19 이후 진행 |
 | Phase 2-3 | 예측 알림 — `src/notify.py` Gmail 전송 (매일 predict 완료 후, 자격증명 없으면 스킵) | ✅ |
+
+> ⏳ Phase 2-2는 prediction_logs 데이터가 최소 30일 이상 쌓인 후 진행.
+> 예측 자동 호출은 2026-04-19부터 시작됐으므로 **2026-05-19 이후** 작업 재개.
 
 ### Phase 3 — AI Agent
 
 | 항목 | 설명 | 상태 |
 |------|------|------|
-| Phase 3 | LangGraph ReAct Agent — `GET /agent/ask?ticker=...&q=...`, Claude API(haiku) 활용, 자연어 투자 인사이트 | ⬜ |
+| Phase 3 | LangGraph ReAct Agent — `GET /agent/ask?ticker=...&q=...`, Claude API(haiku) 활용, 자연어 투자 인사이트 | ⏳ 2026-05-19 이후 진행 |
+
+> ⏳ Phase 3은 prediction_logs 히스토리가 쌓여야 Agent 응답의 질이 올라감.
+> Phase 2-2와 동일하게 **2026-05-19 이후** 작업 재개.
 
 ### Phase 4 — 장기 확장 (보류)
 
@@ -56,6 +62,16 @@
   - Phase 1-1: prediction_logs 테이블, 예측 DB 로깅, actual_direction 사후 업데이트
   - Phase 1-2: backtest.py, GET /stocks/{ticker}/backtest
   - Phase 1-3: tune_threshold.py, models/{ticker}_threshold.json → predictor 자동 적용
+
+✅ backfill 재실행 + 모델 재학습 (2026-04-19)
+  - P0 버그 수정 후 5년치 데이터 재수집 (direction 기준 정정)
+  - train.py 재실행: Model C, Ensemble 포함 전체 재학습
+  - tune_threshold.py 재실행: threshold.json 갱신
+
+✅ Phase 2 — 자동화 (2026-04-19)
+  - Phase 2-1: 매일 재학습 자동화 (eval_compare.py, up_f1 +2% 기준 모델 교체)
+  - Phase 2-3: Gmail 예측 알림 (notify.py, 매일 predict 완료 후 전송)
+  - Phase 2-2: ⏳ 2026-05-19 이후 진행 (prediction_logs 30일치 필요)
 ```
 
 ---
@@ -164,3 +180,23 @@
 - 로깅 실패가 API 가용성에 영향을 주면 안 됨 → try/except로 분리
 - 백테스트는 fixed-model simulation (true walk-forward는 Phase 2-1 재학습 이후 가능)
 - coverage 조건(≥ 30%)은 신호 빈도 보장을 위해 설정
+
+---
+
+### v1.9 — Phase 2: 자동화 (2026.04.19)
+
+**Phase 2-1: ML 재학습 자동화**
+- `src/ml/train.py`: 학습 완료 후 `models/{ticker}_perf_{date}.json` 저장
+- `src/ml/eval_compare.py`: perf JSON 비교, Ensemble up_f1 +2% 미만 시 신규 모델 삭제 (자동 롤백)
+- `cd.yml` pipeline: 매일 수집 후 retrain → eval_compare → tune_threshold 자동 실행
+
+**Phase 2-3: Gmail 예측 알림**
+- `src/notify.py`: prediction_logs 조회 후 Gmail SMTP 전송
+- `cd.yml` notify 잡: predict 완료 후 Actions runner에서 직접 실행
+- GitHub Secrets: `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `NOTIFY_EMAIL`
+
+**결정**
+- 모델 교체 기준 A안 선택 (임시 파일로 학습 후 성능 비교, 좋으면 저장) — 코드 로직이 더 명확
+- 재학습은 GitHub Actions runner가 아닌 EC2에서 실행 (모델 파일이 EC2에 존재)
+- Gmail 알림은 Docker/SSH 없이 Actions runner에서 직접 실행 (DB는 DATABASE_URL로 접근)
+- Phase 2-2, Phase 3는 prediction_logs 30일치 확보 후 진행 (2026-05-19 이후)
