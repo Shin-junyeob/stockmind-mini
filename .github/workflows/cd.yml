@@ -140,3 +140,21 @@ jobs:
           PRICE_PERIOD: "5d"
           PRICE_INTERVAL: "1d"
         run: python src/main.py
+
+      - name: Retrain models
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: src
+        run: python src/ml/train.py
+
+      - name: Evaluate and maybe rollback
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: src
+        run: python src/ml/eval_compare.py
+
+      - name: Tune threshold
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: src
+        run: python src/ml/tune_threshold.py
