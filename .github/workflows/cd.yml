@@ -141,28 +141,33 @@ jobs:
           PRICE_INTERVAL: "1d"
         run: python src/main.py
 
-      - name: Retrain models
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PYTHONPATH: src
-        run: python src/ml/train.py
-
-      - name: Evaluate and maybe rollback
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PYTHONPATH: src
-        run: python src/ml/eval_compare.py
-
-      - name: Tune threshold
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          PYTHONPATH: src
-        run: python src/ml/tune_threshold.py
-
-  # ── 예측 호출 (pipeline 완료 후) ─────────────────────────
-  predict:
+  # ── 재학습 (pipeline 완료 후, EC2에서 실행) ──────────────
+  retrain:
     runs-on: ubuntu-latest
     needs: pipeline
+
+    steps:
+      - name: Retrain on EC2 via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 60m
+          script: |
+            cd ~/stockmind-mini
+            echo "=== 재학습 시작 ==="
+            docker compose exec -T api python src/ml/train.py
+            echo "=== eval_compare ==="
+            docker compose exec -T api python src/ml/eval_compare.py
+            echo "=== tune_threshold ==="
+            docker compose exec -T api python src/ml/tune_threshold.py
+            echo "=== 재학습 완료 ==="
+
+  # ── 예측 호출 (retrain 완료 후) ──────────────────────────
+  predict:
+    runs-on: ubuntu-latest
+    needs: retrain
 
     steps:
       - name: Call prediction API on EC2
