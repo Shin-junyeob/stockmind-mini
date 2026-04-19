@@ -11,7 +11,7 @@
 
 | 항목 | 설명 | 상태 |
 |------|------|------|
-| Phase 2-1 | ML 재학습 자동화 — `cd.yml` retrain job + `src/ml/eval_compare.py` (up_f1 +2% 이상일 때만 교체) | ⬜ |
+| Phase 2-1 | ML 재학습 자동화 — `cd.yml` retrain job + `src/ml/eval_compare.py` (up_f1 +2% 이상일 때만 교체) | ✅ |
 | Phase 2-2 | 모델 성능 모니터링 API — `GET /models/status` (prediction_logs 최근 30일 accuracy 집계) | ⬜ |
 | Phase 2-3 | 예측 알림 — `src/notify.py` Slack/Discord webhook (매일 수집 후 전송, `SLACK_WEBHOOK_URL` 없으면 스킵) | ⬜ |
 

@@ -10,9 +10,11 @@ train.py - ML 학습 오케스트레이터
   Ensemble (Meta XGBoost)
 """
 
+import json
 import logging
 import sys
 import os
+from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
@@ -24,6 +26,8 @@ from ml.train_b import train_pipeline_b
 from ml.train_c import train_pipeline_c
 from ml.train_ensemble import train_ensemble
 from settings import TICKERS
+
+MODEL_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'models')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -90,7 +94,7 @@ def run_training(tickers: list[str] = TICKERS) -> None:
         except Exception as e:
             logger.error(f"[{ticker}] Ensemble 실패: {e}")
 
-    # ── 최종 요약 ──────────────────────────────────────────────
+    # ── 최종 요약 + perf JSON 저장 ───────────────────────────
     logger.info("\n" + "=" * 60)
     logger.info("ML 학습 전체 완료 — 결과 요약")
     logger.info("=" * 60)
@@ -103,6 +107,24 @@ def run_training(tickers: list[str] = TICKERS) -> None:
                 f"{res.get('up_precision', 0):.4f}         "
                 f"{res.get('up_f1', 0):.4f}"
             )
+
+    # 학습 결과를 perf JSON으로 저장 (eval_compare.py에서 사용)
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d")
+    for ticker, models in results.items():
+        if not models:
+            continue
+        perf = {
+            model_name: {
+                "up_f1":       res.get("up_f1", 0.0),
+                "up_precision": res.get("up_precision", 0.0),
+            }
+            for model_name, res in models.items()
+        }
+        perf_path = os.path.join(MODEL_DIR, f"{ticker}_perf_{timestamp}.json")
+        with open(perf_path, "w") as f:
+            json.dump(perf, f, indent=2)
+        logger.info(f"[{ticker}] perf 저장: {perf_path}")
 
 
 if __name__ == "__main__":
