@@ -41,16 +41,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash scripts/hook_stop_pytest.sh"
-          }
-        ]
-      }
     ]
   }
 }
