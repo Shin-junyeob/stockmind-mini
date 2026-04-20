@@ -72,6 +72,13 @@
   - Phase 2-1: 매일 재학습 자동화 (eval_compare.py, up_f1 +2% 기준 모델 교체)
   - Phase 2-3: Gmail 예측 알림 (notify.py, 매일 predict 완료 후 전송)
   - Phase 2-2: ⏳ 2026-05-19 이후 진행 (prediction_logs 30일치 필요)
+
+✅ 인프라 안정화 + 파이프라인 보완 (2026-04-20)
+  - EC2 OOM 원인 파악: retrain 잡이 t2.micro(1GB)에서 실행되어 커널 패닉
+  - ML 재학습을 EC2 SSH → Actions runner(7GB)로 이전, SCP로 모델 파일 전송
+  - EC2 stop/start 복구, IP 변경(54.180.135.179 → 43.200.6.174) → Secrets + .env 갱신
+  - Fear & Greed Index 일일 수집을 main.py 파이프라인에 추가 (Model C feature 누락 수정)
+  - Stop hook(매 응답마다 pytest 실행) 제거
 ```
 
 ---
@@ -200,3 +207,25 @@
 - 재학습은 GitHub Actions runner가 아닌 EC2에서 실행 (모델 파일이 EC2에 존재)
 - Gmail 알림은 Docker/SSH 없이 Actions runner에서 직접 실행 (DB는 DATABASE_URL로 접근)
 - Phase 2-2, Phase 3는 prediction_logs 30일치 확보 후 진행 (2026-05-19 이후)
+
+---
+
+### v2.0 — 인프라 안정화 + 파이프라인 보완 (2026.04.20)
+
+**OOM 수정 및 재학습 이전**
+- EC2 t2.micro에서 train.py 실행 시 OOM 발생 → EC2 impaired 상태로 CD 전체 실패
+- retrain 잡을 Actions runner(7GB RAM)에서 직접 실행하도록 변경
+- 학습 완료 후 SCP로 모델 파일만 EC2 전송 → `docker compose restart api`로 반영
+
+**EC2 복구**
+- stop/start로 impaired 상태 복구
+- IP 변경(54.180.135.179 → 43.200.6.174, Elastic IP 확인)
+- GitHub Secrets(`EC2_HOST`, `DATABASE_URL`) 및 로컬 `.env` 갱신
+
+**Fear & Greed 일일 수집 추가**
+- Model C feature로 사용 중이나 `main.py`에 수집 로직이 없었음
+- 매일 최근 7일치 fetch → upsert 방식으로 파이프라인에 통합
+
+**결정**
+- EC2 swap 추가 미적용 (비용 이슈, retrain 이전으로 OOM 근본 해결)
+- CloudWatch 알람 미적용 (파이프라인 안정화 후 불필요 판단)
