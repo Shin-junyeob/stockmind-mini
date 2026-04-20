@@ -9,11 +9,13 @@ from collector.price_fetcher import (
 )
 from collector.yahoo_scraper import collect_yahoo_links
 from collector.article_fetcher import fetch_articles
+from collector.fear_greed_fetcher import fetch_fear_greed
 from analyzer.sentiment import analyze_articles
 from db.writer import (
     init_db,
     upsert_stock_prices,
     upsert_market_indicators,
+    upsert_fear_greed,
     insert_articles,
     get_existing_urls,
     update_prediction_actuals,
@@ -50,6 +52,16 @@ def run_pipeline(tickers: list[str] = TICKERS) -> None:
         upsert_market_indicators(market_data)
     else:
         logger.warning("시장 지표 데이터 없음, 스킵")
+
+    # ── Fear & Greed Index 수집 (공통) ───────────────────────
+    logger.info("Fear & Greed Index 수집 중...")
+    from datetime import timedelta
+    fg_from = (date.today() - timedelta(days=7)).isoformat()
+    fg_data = fetch_fear_greed(from_date=fg_from)
+    if fg_data:
+        upsert_fear_greed(fg_data)
+    else:
+        logger.warning("Fear & Greed 데이터 없음, 스킵")
 
     for ticker in tickers:
         logger.info(f"--- [{ticker}] 처리 시작 ---")
