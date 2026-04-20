@@ -142,29 +142,86 @@ jobs:
           PRICE_INTERVAL: "1d"
         run: python src/main.py
 
-  # ── 재학습 (pipeline + deploy 완료 후, EC2에서 실행) ─────
+  # ── 재학습 (pipeline + deploy 완료 후, Actions runner에서 실행) ─────
   retrain:
     runs-on: ubuntu-latest
     needs: [pipeline, deploy]
     if: always() && needs.pipeline.result == 'success'
 
     steps:
-      - name: Retrain on EC2 via SSH
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Download existing models from EC2
+        run: |
+          mkdir -p models
+          scp -i ~/.ssh/ec2_key \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/stockmind-mini/models/* \
+            models/ || echo "기존 모델 없음, 첫 학습으로 진행"
+
+      - name: Train models
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: src
+        run: |
+          echo "=== 재학습 시작 ==="
+          python src/ml/train.py
+          echo "=== 재학습 완료 ==="
+
+      - name: Evaluate and compare
+        env:
+          PYTHONPATH: src
+        run: |
+          echo "=== eval_compare ==="
+          python src/ml/eval_compare.py
+
+      - name: Tune threshold
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: src
+        run: |
+          echo "=== tune_threshold ==="
+          python src/ml/tune_threshold.py
+
+      - name: Upload models to EC2
+        run: |
+          echo "=== 모델 업로드 ==="
+          scp -i ~/.ssh/ec2_key \
+            models/* \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:~/stockmind-mini/models/
+          echo "✅ 모델 업로드 완료"
+
+      - name: Reload API on EC2
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          command_timeout: 120m
           script: |
             cd ~/stockmind-mini
-            echo "=== 재학습 시작 ==="
-            docker compose exec -T api python src/ml/train.py
-            echo "=== eval_compare ==="
-            docker compose exec -T api python src/ml/eval_compare.py
-            echo "=== tune_threshold ==="
-            docker compose exec -T api python src/ml/tune_threshold.py
-            echo "=== 재학습 완료 ==="
+            docker compose restart api
+            echo "✅ API 재시작 완료 (새 모델 로드)"
 
   # ── 예측 호출 (retrain 완료 후) ──────────────────────────
   predict:
